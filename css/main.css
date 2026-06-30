@@ -1,6 +1,6 @@
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; color-scheme: dark; }
-body { margin: 0; overflow-x: hidden; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); line-height: 1.55; }
+html { max-width: 100%; overflow-x: hidden; scroll-behavior: smooth; color-scheme: dark; }
+body { margin: 0; max-width: 100%; overflow-x: hidden; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); line-height: 1.55; }
 body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(circle at 80% 0, rgba(211,165,56,.07), transparent 30%); }
 body.menu-open { overflow: hidden; }
 a { color: inherit; text-decoration: none; }
@@ -63,9 +63,11 @@ h2 { font-size: clamp(1.7rem, 3vw, 2.4rem); }
 .contact-note p:last-child { max-width: 640px; color: var(--color-muted); }
 .toast { position: fixed; right: 22px; bottom: 22px; z-index: 100; max-width: min(360px, calc(100vw - 44px)); padding: 14px 18px; transform: translateY(20px); border: 1px solid #6b582d; border-radius: var(--radius-sm); background: #15181a; box-shadow: var(--shadow); opacity: 0; pointer-events: none; font-size: .8rem; transition: var(--transition); }
 .toast.show { transform: translateY(0); opacity: 1; }
-.modal, .lightbox { padding: 0; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: transparent; color: var(--color-text); box-shadow: var(--shadow); }
+.modal, .lightbox { box-sizing: border-box; padding: 0; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: transparent; color: var(--color-text); box-shadow: var(--shadow); }
+.modal { position: fixed; inset: 0; width: min(95vw, 600px); max-width: 95vw; max-height: 90dvh; margin: auto; overflow: hidden; }
+.modal[open] { display: flex; align-items: center; justify-content: center; }
 .modal::backdrop, .lightbox::backdrop { background: rgba(0,0,0,.84); backdrop-filter: blur(7px); }
-.modal-card { position: relative; width: min(520px, calc(100vw - 32px)); padding: clamp(26px, 5vw, 44px); background: linear-gradient(145deg, #16191b, #0b0d0e); }
+.modal-card { position: relative; width: 100%; max-width: 100%; max-height: 90dvh; padding: clamp(26px, 5vw, 44px); overflow-x: hidden; overflow-y: auto; overflow-wrap: anywhere; background: linear-gradient(145deg, #16191b, #0b0d0e); }
 .modal-card h2 { font-size: 2.6rem; }
 .modal-product { margin: 9px 0 26px; color: var(--color-gold-light); }
 .modal-close { position: absolute; top: 14px; right: 16px; width: 38px; height: 38px; border: 0; background: transparent; color: var(--color-muted); font-size: 1.7rem; }
