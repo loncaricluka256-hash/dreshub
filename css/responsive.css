@@ -41,7 +41,11 @@
   .product-info { padding-top: 0; }.product-actions { grid-template-columns: 1fr auto; }.product-actions .button:first-child { grid-column: 1 / -1; }.detail-list div { flex-direction: column; gap: 3px; }.detail-list dd { text-align: left; }
   .cart-item { padding: 12px 38px 12px 12px; grid-template-columns: 84px 1fr; gap: 12px; }.quantity-control { width: max-content; grid-column: 2; }.cart-line-price { grid-column: 1; grid-row: 2; text-align: center; }
   .footer-grid { grid-template-columns: 1fr; gap: 30px; }.footer-grid section:last-child { grid-column: auto; }.footer-bottom { flex-direction: column; }
-  .lightbox figure { padding-inline: 48px; }.lightbox img:hover { transform: none; }
+  .lightbox { width: 100vw; height: 100dvh; max-width: 100vw; max-height: 100dvh; border: 0; border-radius: 0; }
+  .lightbox figure { padding: 52px 48px; }
+  .lightbox img { max-width: min(95vw, 100%); max-height: min(80vh, 100%); width: auto; height: auto; object-fit: contain; }
+  .lightbox img:hover { transform: none; }
+  .lightbox-arrow { width: 40px; height: 58px; }.lightbox-arrow.previous { left: 4px; }.lightbox-arrow.next { right: 4px; }
   .toast { right: 16px; bottom: 16px; }
 }
 

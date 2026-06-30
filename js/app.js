@@ -1,5 +1,5 @@
 import { initComponents } from './components.js';
-import { loadProducts, renderProducts } from './products.js';
+import { createProductCard, loadProducts, renderProducts } from './products.js';
 import { initFilters } from './filters.js';
 import { isFavorite, toggleFavorite } from '../services/favoritesService.js';
 import { addToCart } from '../services/cartService.js';
@@ -7,6 +7,7 @@ import { getRecentlyViewed } from './recentlyViewed.js';
 import { initReservationModal, openReservationModal } from './reservationModal.js';
 import { initLightbox } from './lightbox.js';
 import { showToast } from './utils.js';
+import { subscribeToProductChanges } from '../services/productService.js';
 
 /**
  * Povezuje akcije kartica proizvoda koristeći delegaciju događaja.
@@ -27,15 +28,15 @@ function initProductActions() {
       favoriteButton.querySelector('span').textContent = active ? '♥' : '♡';
       showToast(active ? 'Dodano u omiljene.' : 'Uklonjeno iz omiljenih.');
     }
-    if (reserveButton) await openReservationModal(Number(reserveButton.dataset.reserve));
+    if (reserveButton) await openReservationModal(reserveButton.dataset.reserve);
     if (cartButton) {
-      addToCart(Number(cartButton.dataset.addCart));
+      addToCart(cartButton.dataset.addCart);
       showToast('Proizvod je dodan u košaricu.');
     }
   });
   window.addEventListener('dreshub:favorites-changed', () => {
     document.querySelectorAll('[data-favorite]').forEach((button) => {
-      const active = isFavorite(Number(button.dataset.favorite));
+      const active=isFavorite(button.dataset.favorite);
       button.classList.toggle('active', active);
       button.querySelector('span').textContent = active ? '♥' : '♡';
     });
@@ -55,10 +56,12 @@ async function init() {
     renderProducts(products);
     initFilters(products, renderProducts);
     initProductActions();
+    window.addEventListener('dreshub:reservation-created',async(event)=>{const fresh=(await loadProducts()).find((product)=>String(product.id)===String(event.detail?.productId));if(!fresh)return;document.querySelectorAll('[data-product-id]').forEach((card)=>{if(String(card.dataset.productId)===String(fresh.id))card.outerHTML=createProductCard(fresh);});});
+    await subscribeToProductChanges((freshProducts)=>{products.splice(0,products.length,...freshProducts);renderProducts(products);});
 
     const recentIds = getRecentlyViewed();
     const recentSection = document.querySelector('[data-recent-section]');
-    const recentProducts = recentIds.map((id) => products.find((product) => product.id === id)).filter(Boolean);
+    const recentProducts=recentIds.map((id)=>products.find((product)=>String(product.id)===String(id))).filter(Boolean);
     if (recentSection && recentProducts.length) {
       recentSection.hidden = false;
       renderProducts(recentProducts, '[data-recent-grid]');

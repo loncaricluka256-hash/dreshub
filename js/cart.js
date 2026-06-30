@@ -10,7 +10,7 @@ let products = [];
 function renderCart() {
   const root = document.querySelector('[data-cart]');
   const cart = getCart();
-  const items = cart.map((entry) => ({ ...entry, product: products.find((product) => product.id === entry.productId) })).filter((entry) => entry.product);
+  const items = cart.map((entry) => ({ ...entry, product: products.find((product)=>String(product.id)===String(entry.productId)) })).filter((entry) => entry.product);
   if (!items.length) {
     root.innerHTML = '<div class="empty-state"><span aria-hidden="true">◎</span><h2>Košarica je prazna</h2><p>Odaberite dres i vratite se kada pronađete svoj favorit.</p><a class="button button-primary" href="index.html">Pregledaj dresove</a></div>';
     return;
@@ -40,14 +40,14 @@ function initCartActions() {
     }
     const item = event.target.closest('[data-cart-item]');
     if (!item) return;
-    const id = Number(item.dataset.cartItem);
-    const current = getCart().find((entry) => entry.productId === id);
+    const id=item.dataset.cartItem;
+    const current=getCart().find((entry)=>String(entry.productId)===String(id));
     if (event.target.closest('[data-remove]')) {
       removeFromCart(id); showToast('Proizvod je uklonjen.'); renderCart();
     }
     const action = event.target.closest('[data-quantity]')?.dataset.quantity;
     if (action && current) {
-      const product = products.find((entry) => entry.id === id);
+      const product=products.find((entry)=>String(entry.id)===String(id));
       const next = action === 'plus' ? Math.min(current.quantity + 1, product.stock) : current.quantity - 1;
       updateCartQuantity(id, next);
       renderCart();

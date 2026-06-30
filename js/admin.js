@@ -3,7 +3,7 @@ import {
   initializeAdminData, refreshAdminCollections, getCollection, saveCollection, recordChange, saveProduct, adjustProductStock,
   setProductArchived, deleteProduct, updateReservation, getAdminSettings, saveAdminSettings, exportAllData
 } from '../services/adminService.js';
-import { getReservations } from '../services/reservationService.js';
+import { getReservations, subscribeToReservationChanges } from '../services/reservationService.js';
 import { createPurchaseOrder, updatePurchaseOrder, finalizePurchaseOrder, copyPurchaseOrder } from '../services/purchaseOrderService.js';
 import { createTransaction } from '../services/transactionService.js';
 import { createNote, updateNote, deleteNote, archiveNote, completeNote } from '../services/noteService.js';
@@ -16,6 +16,7 @@ const viewNames = {
   finance: 'Financije', notes: 'Bilješke', changes: 'Povijest promjena', transactions: 'Povijest transakcija', settings: 'Postavke'
 };
 const negativeTypes = new Set(['Trošak', 'Povrat', 'Dostava', 'Carina', 'Popust']);
+let reservationRealtimeStarted=false;
 let products = [];
 let orderDraft = [];
 let activeReservationStatus = 'active';
@@ -197,7 +198,7 @@ function transactionRows(transactions) { return transactions.slice().sort((a,b)=
 function renderNotes() {
   const status=document.querySelector('[data-note-status]')?.value||'all', priority=document.querySelector('[data-note-priority]')?.value||'all';
   const notes=getCollection('notes').filter(n=>(status==='all'||n.status===status)&&(priority==='all'||n.priority===priority)).sort((a,b)=>Number(b.pinned)-Number(a.pinned)||new Date(b.createdAt)-new Date(a.createdAt));
-  document.querySelector('[data-notes-list]').innerHTML=notes.map(note=>`<article class="note-card ${note.pinned?'pinned':''}" data-note="${note.id}"><header><div><p class="eyebrow">${escapeHTML(note.type)}</p><h2>${note.pinned?'◆ ':''}${escapeHTML(note.title)}</h2></div><span class="status-pill">${escapeHTML(note.status)}</span></header><p>${escapeHTML(note.description||'Bez opisa')}</p><div class="note-meta"><span class="priority-${note.priority}">${escapeHTML(note.priority)}</span>${(note.tags||[]).map(tag=>`<span>#${escapeHTML(tag)}</span>`).join('')}</div><time>${note.dueDate?`Rok: ${formatDate(note.dueDate,false)}`:'Bez roka'}</time><div class="card-actions"><button data-edit-note>Uredi</button>${note.status!=='Završena'?'<button data-complete-note>Završi</button>':''}<button data-archive-note>Arhiviraj</button><button data-delete-note>Obriši</button></div></article>`).join('')||emptyAdmin('Nema bilješki za odabrane filtre.');
+  document.querySelector('[data-notes-list]').innerHTML=notes.map(note=>{const id=escapeHTML(String(note.id));return`<article class="note-card ${note.pinned?'pinned':''}" data-note="${id}" data-id="${id}"><header><div><p class="eyebrow">${escapeHTML(note.type)}</p><h2>${note.pinned?'◆ ':''}${escapeHTML(note.title)}</h2></div><span class="status-pill">${escapeHTML(note.status)}</span></header><p>${escapeHTML(note.description||'Bez opisa')}</p><div class="note-meta"><span class="priority-${note.priority}">${escapeHTML(note.priority)}</span>${(note.tags||[]).map(tag=>`<span>#${escapeHTML(tag)}</span>`).join('')}</div><time>${note.dueDate?`Rok: ${formatDate(note.dueDate,false)}`:'Bez roka'}</time><div class="card-actions"><button type="button" data-edit-note data-id="${id}">Uredi</button>${note.status!=='Završena'?`<button type="button" data-complete-note data-id="${id}">Završi</button>`:''}<button type="button" data-archive-note data-id="${id}">Arhiviraj</button><button type="button" data-delete-note data-id="${id}">Obriši</button></div></article>`;}).join('')||emptyAdmin('Nema bilješki za odabrane filtre.');
 }
 
 /** Otvara formu bilješke. @param {Object|null} note Bilješka. @returns {void} */
@@ -297,14 +298,14 @@ function bindProducts() {
 /** Povezuje akcije rezervacija. @returns {void} */
 function bindReservations() {
   document.querySelector('[data-reservation-tabs]').addEventListener('click',(event)=>{const button=event.target.closest('[data-status]');if(!button)return;activeReservationStatus=button.dataset.status;document.querySelectorAll('[data-status]').forEach(b=>b.classList.toggle('active',b===button));renderReservations();});
-  document.querySelector('[data-reservations-list]').addEventListener('click',(event)=>{const row=event.target.closest('[data-reservation]');if(row)openReservationDetail(getReservations().find(r=>r.id===Number(row.dataset.reservation)));});
-  document.querySelector('[data-reservation-dialog]').addEventListener('click',async(event)=>{const id=Number(event.target.dataset.contacted||event.target.dataset.completeReservation||event.target.dataset.cancelReservation);if(event.target.dataset.contacted){await updateReservation(id,'contacted');toast('Rezervacija je označena kao kontaktirana.');document.querySelector('[data-reservation-dialog]').close();await refreshAll();}if(event.target.dataset.completeReservation){await updateReservation(id,'completed');toast('Prodaja je evidentirana.');document.querySelector('[data-reservation-dialog]').close();await refreshAll();}if(event.target.dataset.cancelReservation){const reason=prompt('Razlog otkazivanja:');if(reason!==null){await updateReservation(id,'cancelled',reason);toast('Rezervacija je otkazana i količina vraćena.');document.querySelector('[data-reservation-dialog]').close();await refreshAll();}}});
+  document.querySelector('[data-reservations-list]').addEventListener('click',(event)=>{const row=event.target.closest('[data-reservation]');if(row)openReservationDetail(getReservations().find(r=>String(r.id)===String(row.dataset.reservation)));});
+  document.querySelector('[data-reservation-dialog]').addEventListener('click',async(event)=>{const id=event.target.dataset.contacted||event.target.dataset.completeReservation||event.target.dataset.cancelReservation;if(event.target.dataset.contacted){await updateReservation(id,'contacted');toast('Rezervacija je označena kao kontaktirana.');document.querySelector('[data-reservation-dialog]').close();await refreshAll();}if(event.target.dataset.completeReservation){await updateReservation(id,'completed');toast('Prodaja je evidentirana.');document.querySelector('[data-reservation-dialog]').close();await refreshAll();}if(event.target.dataset.cancelReservation){const reason=prompt('Razlog otkazivanja:');if(reason!==null){await updateReservation(id,'cancelled',reason);toast('Rezervacija je otkazana i količina vraćena.');document.querySelector('[data-reservation-dialog]').close();await refreshAll();}}});
 }
 
 /** Povezuje izradu i zaključivanje narudžbi. @returns {void} */
 function bindOrders() {
   document.querySelector('[data-order-tabs]').addEventListener('click',(event)=>{const button=event.target.closest('[data-order-status]');if(!button)return;activeOrderStatus=button.dataset.orderStatus;document.querySelectorAll('[data-order-status]').forEach(b=>b.classList.toggle('active',b===button));renderOrders();});
-  document.querySelector('[data-add-order-product]').addEventListener('click',()=>{const p=products.find(x=>x.id===Number(document.querySelector('[data-order-product-select]').value));if(p){orderDraft.push({productId:p.id,name:p.name,quantity:1,costPrice:p.costPrice||0,price:p.price,size:p.sizes[0],version:p.version,note:''});renderOrderDraft();}});
+  document.querySelector('[data-add-order-product]').addEventListener('click',()=>{const selectedId=document.querySelector('[data-order-product-select]').value,p=products.find(x=>String(x.id)===String(selectedId));if(p){orderDraft.push({productId:p.id,name:p.name,quantity:1,costPrice:p.costPrice||0,price:p.price,size:p.sizes[0],version:p.version,note:''});renderOrderDraft();}});
   document.querySelector('[data-add-order-custom]').addEventListener('click',()=>{orderDraft.push({productId:null,name:'Novi proizvod',quantity:1,costPrice:0,price:0,size:'M',version:'Fan Version',note:''});renderOrderDraft();});
   document.querySelector('[data-order-items]').addEventListener('input',(event)=>{const row=event.target.closest('[data-order-item]');if(row&&event.target.dataset.orderField){orderDraft[Number(row.dataset.orderItem)][event.target.dataset.orderField]=event.target.type==='number'?Number(event.target.value):event.target.value;}});
   document.querySelector('[data-order-items]').addEventListener('click',(event)=>{const row=event.target.closest('[data-order-item]');if(row&&event.target.closest('[data-remove-order-item]')){orderDraft.splice(Number(row.dataset.orderItem),1);renderOrderDraft();}});
@@ -321,8 +322,21 @@ function bindFinance() {
 /** Povezuje upravljanje bilješkama. @returns {void} */
 function bindNotes() {
   document.querySelector('[data-note-status]').addEventListener('change',renderNotes);document.querySelector('[data-note-priority]').addEventListener('change',renderNotes);
-  document.querySelector('[data-note-form]').addEventListener('submit',async(event)=>{event.preventDefault();const data=new FormData(event.currentTarget),id=Number(data.get('id')),existing=getCollection('notes').find(n=>n.id===id),note={title:data.get('title').trim(),description:data.get('description').trim(),type:data.get('type'),amount:data.get('amount')?Number(data.get('amount')):null,dueDate:data.get('dueDate')||null,priority:data.get('priority'),status:data.get('status'),tags:data.get('tags').split(',').map(x=>x.trim()).filter(Boolean),productId:data.get('productId')?Number(data.get('productId')):null,orderId:data.get('orderId')?Number(data.get('orderId')):null,pinned:data.get('pinned')==='on'};if(existing)await updateNote(id,note);else await createNote(note);recordChange('notes',existing?`Uređena bilješka: ${note.title}`:`Dodana bilješka: ${note.title}`,existing||null,note);document.querySelector('[data-note-dialog]').close();toast('Bilješka je spremljena.');await refreshAll();});
-  document.querySelector('[data-notes-list]').addEventListener('click',async(event)=>{const card=event.target.closest('[data-note]');if(!card)return;const note=getCollection('notes').find(n=>n.id===Number(card.dataset.note));if(event.target.closest('[data-edit-note]'))openNoteDialog(note);if(event.target.closest('[data-complete-note]')){await completeNote(note.id);recordChange('notes',`Završena bilješka: ${note.title}`,'Aktivna','Završena');await refreshAll();}if(event.target.closest('[data-archive-note]')){await archiveNote(note.id);recordChange('notes',`Arhivirana bilješka: ${note.title}`,null,'Arhivirana');await refreshAll();}if(event.target.closest('[data-delete-note]')&&confirm('Obrisati bilješku?')){await deleteNote(note.id);recordChange('notes',`Obrisana bilješka: ${note.title}`,note,null);await refreshAll();}});
+  document.querySelector('[data-note-form]').addEventListener('submit',async(event)=>{event.preventDefault();const form=event.currentTarget,submit=form.querySelector('[type="submit"]');submit.disabled=true;try{const data=new FormData(form),id=data.get('id'),existing=getCollection('notes').find(n=>String(n.id)===String(id)),note={title:data.get('title').trim(),description:data.get('description').trim(),type:data.get('type'),amount:data.get('amount')?Number(data.get('amount')):null,dueDate:data.get('dueDate')||null,priority:data.get('priority'),status:data.get('status'),tags:data.get('tags').split(',').map(x=>x.trim()).filter(Boolean),productId:data.get('productId')||null,orderId:data.get('orderId')||null,pinned:data.get('pinned')==='on'};if(existing)await updateNote(id,note);else await createNote(note);recordChange('notes',existing?`Uređena bilješka: ${note.title}`:`Dodana bilješka: ${note.title}`,existing||null,note);document.querySelector('[data-note-dialog]').close();toast('Bilješka je spremljena.');await refreshAll();}catch(error){console.error('[DresHub Bilješke]',{service:'noteService',table:'notes',operation:'spremanje bilješke',message:error.message});toast(`Bilješka nije spremljena: ${error.message}`);}finally{submit.disabled=false;}});
+  document.querySelector('[data-notes-list]').addEventListener('click',async(event)=>{
+    const button=event.target.closest('[data-edit-note],[data-complete-note],[data-archive-note],[data-delete-note]');if(!button)return;
+    const noteId=button.dataset.id||button.closest('[data-id]')?.dataset.id||button.closest('[data-note]')?.dataset.note;
+    if(!noteId){console.warn('[DresHub Bilješke] Kliknuti gumb nema data-id; akcija je prekinuta.',button);return;}
+    const note=getCollection('notes').find((item)=>String(item.id)===String(noteId));
+    if(!note){console.warn('[DresHub Bilješke] Bilješka nije pronađena; akcija je prekinuta.',{noteId});return;}
+    try{
+      if(button.matches('[data-edit-note]')){openNoteDialog(note);return;}
+      if(button.matches('[data-complete-note]')){await completeNote(noteId);recordChange('notes',`Završena bilješka: ${note.title}`,'Aktivna','Završena');}
+      else if(button.matches('[data-archive-note]')){await archiveNote(noteId);recordChange('notes',`Arhivirana bilješka: ${note.title}`,null,'Arhivirana');}
+      else if(button.matches('[data-delete-note]')){if(!confirm('Obrisati bilješku?'))return;await deleteNote(noteId);recordChange('notes',`Obrisana bilješka: ${note.title}`,note,null);}
+      await refreshAll();
+    }catch(error){console.error('[DresHub Bilješke]',{service:'noteService',table:'notes',operation:'akcija bilješke',noteId,message:error.message});toast(`Akcija nije uspjela: ${error.message}`);}
+  });
 }
 
 /** Povezuje filtre povijesti. @returns {void} */
@@ -345,6 +359,7 @@ async function startAdmin() {
     catch (error) { console.error('[DresHub Admin] Inicijalizacija jednog modula nije uspjela. Admin ostaje dostupan bez Local Storage fallbacka.',error); }
     try { await refreshAll(); }
     catch (error) { console.error('[DresHub Admin] Dio dashboard podataka nije moguće prikazati.',error); }
+    if(!reservationRealtimeStarted){reservationRealtimeStarted=true;await subscribeToReservationChanges(()=>{renderDashboard();renderReservations();document.querySelectorAll('[data-active-reservations]').forEach((element)=>element.textContent=getReservations().filter((item)=>item.status==='active').length);});}
   };
   if(sessionStorage.getItem('dreshub.admin.auth')==='true'){showApp();void loadData();}
   document.querySelector('[data-login-form]').addEventListener('submit',async(event)=>{

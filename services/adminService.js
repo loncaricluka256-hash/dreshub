@@ -74,7 +74,7 @@ export async function initializeAdminData() {
     reservations.forEach((reservation) => {
       if (reservation.status === 'received') reservation.status = 'active';
       if (!reservation.items?.length && reservation.productId) {
-        const product = products.find((item) => item.id === Number(reservation.productId));
+        const product=products.find((item)=>String(item.id)===String(reservation.productId));
         if (product) reservation.items = [{ productId: product.id, name: product.name, image: product.images[0], size: product.sizes[0], quantity: 1, price: product.price }];
       }
       reservation.createdAt ||= new Date(reservation.id || Date.now()).toISOString();
@@ -83,7 +83,7 @@ export async function initializeAdminData() {
       if (reservation.status === 'active' && new Date(reservation.expiresAt) <= new Date()) {
         reservation.status = 'expired';
         reservation.items?.forEach((entry) => {
-          const product = products.find((item) => item.id === Number(entry.productId));
+          const product=products.find((item)=>String(item.id)===String(entry.productId));
           if (product) { product.stock += Number(entry.quantity || 1); productsChanged = true; }
         });
       }
@@ -161,7 +161,7 @@ export async function deleteProduct(productId) {
  */
 export async function updateReservation(reservationId, status, reason = '') {
   const reservations = getReservations();
-  const reservation = reservations.find((item) => item.id === Number(reservationId));
+  const reservation=reservations.find((item)=>String(item.id)===String(reservationId));
   if (!reservation) return null;
   const oldStatus = reservation.status;
   if (status === 'completed') return completeReservation(reservationId);

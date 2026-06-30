@@ -4,9 +4,13 @@ import { getSupabaseClient, isSupabaseConfigured, reportSupabaseError, throwIfSu
 const PRODUCTS_KEY = 'dreshub.products';
 export const PRODUCT_PLACEHOLDER_IMAGE='assets/images/product-placeholder.svg';
 let productCache = null;
+let productChannel=null;
 
 /** @param {Object|null} product Proizvod. @returns {string} Glavna slika ili placeholder. */
 export function getProductMainImage(product){return product?.mainImageUrl||product?.images?.[0]||PRODUCT_PLACEHOLDER_IMAGE;}
+
+/** Prati promjene proizvoda radi sinkronizacije zalihe među uređajima. @param {(products:Array<Object>)=>void} callback Poziv nakon promjene. @returns {Promise<()=>Promise<void>>} Odjava. */
+export async function subscribeToProductChanges(callback){const client=await getSupabaseClient();if(!client||productChannel)return async()=>{};productChannel=client.channel('dreshub-public-products').on('postgres_changes',{event:'*',schema:'public',table:'products'},async()=>callback?.(await getProducts())).subscribe();return async()=>{if(productChannel){await client.removeChannel(productChannel);productChannel=null;}};}
 
 /** Uklanja privremene i Base64 slike iz lokalnog modela. @param {Object} product Proizvod. @returns {Object} */
 function lightweightProduct(product) {
@@ -120,7 +124,7 @@ export async function updateProduct(productId, productData) {
 export async function archiveProduct(productId) { return updateProduct(productId, { archived: true }); }
 
 /** @param {number|string} productId ID. @returns {Promise<void>} */
-export async function deleteProduct(productId) { const client=await getSupabaseClient();if(client){const{error}=await client.from('products').delete().eq('id',productId);throwIfSupabaseError(error,{service:'productService',table:'products',operation:'brisanje proizvoda',columns:['id']});return;}if(isSupabaseConfigured())throw new Error('Supabase proizvodi trenutačno nisu dostupni.');saveProducts((await getAllProducts()).filter((item)=>item.id!==Number(productId))); }
+export async function deleteProduct(productId) { const client=await getSupabaseClient();if(client){const{error}=await client.from('products').delete().eq('id',String(productId));throwIfSupabaseError(error,{service:'productService',table:'products',operation:'brisanje proizvoda',columns:['id']});return;}if(isSupabaseConfigured())throw new Error('Supabase proizvodi trenutačno nisu dostupni.');saveProducts((await getAllProducts()).filter((item)=>String(item.id)!==String(productId))); }
 
 /** @param {number|string} productId ID. @param {number} amount Količina. @returns {Promise<Object|null>} */
 export async function incrementProductQuantity(productId, amount) { const product=await getProductById(productId);return product?updateProduct(productId,{stock:Number(product.stock)+Math.abs(Number(amount))}):null; }

@@ -1,5 +1,5 @@
 import { initComponents } from './components.js';
-import { getProductById, getProductMainImage, getProducts } from '../services/productService.js';
+import { getProductById, getProductMainImage, getProducts, subscribeToProductChanges } from '../services/productService.js';
 import { addToCart } from '../services/cartService.js';
 import { isFavorite, toggleFavorite } from '../services/favoritesService.js';
 import { addRecentlyViewed } from './recentlyViewed.js';
@@ -73,14 +73,15 @@ function renderProduct(product, products) {
     event.currentTarget.setAttribute('aria-pressed', String(active));
     showToast(active ? 'Dodano u omiljene.' : 'Uklonjeno iz omiljenih.');
   });
+  window.addEventListener('dreshub:reservation-created',async(event)=>{if(String(event.detail?.productId)!==String(product.id))return;const fresh=await getProductById(String(product.id));if(!fresh)return;const nextStatus=getStockStatus(fresh),statusElement=root.querySelector('.stock-status');statusElement.className=`stock-status ${nextStatus.className}`;statusElement.innerHTML=`<span></span>${nextStatus.label}`;root.querySelector('[data-reserve-detail]').disabled=fresh.stock<1;root.querySelector('[data-cart-detail]').disabled=fresh.stock<1;},{once:true});
 
   const similarGrid = document.querySelector('[data-similar-grid]');
   similarGrid.addEventListener('click', async (event) => {
     const reserve = event.target.closest('[data-reserve]');
     const favoriteButton = event.target.closest('[data-favorite]');
-    if (reserve) await openReservationModal(Number(reserve.dataset.reserve));
+    if (reserve) await openReservationModal(reserve.dataset.reserve);
     if (favoriteButton) {
-      const active = toggleFavorite(Number(favoriteButton.dataset.favorite));
+      const active=toggleFavorite(favoriteButton.dataset.favorite);
       favoriteButton.classList.toggle('active', active);
       favoriteButton.querySelector('span').textContent = active ? '♥' : '♡';
       showToast(active ? 'Dodano u omiljene.' : 'Uklonjeno iz omiljenih.');
@@ -102,6 +103,7 @@ async function init() {
   document.title = `${product.name} | DresHub`;
   addRecentlyViewed(product.id);
   renderProduct(product, products);
+  await subscribeToProductChanges((freshProducts)=>{const fresh=freshProducts.find((item)=>String(item.id)===String(product.id));if(!fresh)return;const status=getStockStatus(fresh),root=document.querySelector('[data-product-detail]'),statusElement=root.querySelector('.stock-status');if(statusElement){statusElement.className=`stock-status ${status.className}`;statusElement.innerHTML=`<span></span>${status.label}`;}root.querySelector('[data-reserve-detail]').disabled=fresh.stock<1;root.querySelector('[data-cart-detail]').disabled=fresh.stock<1;});
 }
 
 init();

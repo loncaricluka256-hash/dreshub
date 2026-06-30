@@ -4,7 +4,7 @@ const FAVORITES_KEY = 'dreshub.favorites';
 
 /** @returns {Array<number>} Identifikatori omiljenih proizvoda. */
 export function getFavorites() {
-  return readStorage(FAVORITES_KEY, []);
+  return readStorage(FAVORITES_KEY, []).map(String);
 }
 
 /**
@@ -13,7 +13,7 @@ export function getFavorites() {
  * @returns {boolean} True kada je proizvod spremljen.
  */
 export function isFavorite(productId) {
-  return getFavorites().includes(Number(productId));
+  return getFavorites().includes(String(productId));
 }
 
 /**
@@ -22,7 +22,7 @@ export function isFavorite(productId) {
  * @returns {boolean} Novo stanje favorita.
  */
 export function toggleFavorite(productId) {
-  const id = Number(productId);
+  const id=String(productId);
   const favorites = getFavorites();
   const active = !favorites.includes(id);
   writeStorage(FAVORITES_KEY, active ? [...favorites, id] : favorites.filter((item) => item !== id));

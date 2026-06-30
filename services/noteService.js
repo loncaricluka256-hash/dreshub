@@ -23,7 +23,7 @@ export async function getNotes() {
 }
 
 /** @param {number|string} noteId ID. @returns {Promise<Object|null>} */
-export async function getNoteById(noteId) { return (await getNotes()).find((note) => note.id === Number(noteId)) ?? null; }
+export async function getNoteById(noteId) { return (await getNotes()).find((note)=>String(note.id)===String(noteId))??null; }
 
 /** @param {Object} noteData Podaci. @returns {Promise<Object>} */
 export async function createNote(noteData) {
@@ -34,10 +34,10 @@ export async function createNote(noteData) {
 }
 
 /** @param {number|string} noteId ID. @param {Object} noteData Izmjene. @returns {Promise<Object|null>} */
-export async function updateNote(noteId,noteData){const client=await getSupabaseClient();if(client){const current=await getNoteById(noteId);if(!current)return null;const payload=toDatabase({...current,...noteData}),{data,error}=await client.from('notes').update(payload).eq('id',noteId).select().single();throwIfSupabaseError(error,{...META,operation:'ažuriranje bilješke',columns:Object.keys(payload)});return fromDatabase(data);}if(isSupabaseConfigured())throw new Error('Supabase bilješke trenutačno nisu dostupne.');const notes=localNotes(),note=notes.find((item)=>item.id===Number(noteId));if(!note)return null;Object.assign(note,noteData);writeStorage(KEY,notes);return note;}
+export async function updateNote(noteId,noteData){const client=await getSupabaseClient();if(client){const current=await getNoteById(noteId);if(!current)throw new Error(`Bilješka ${noteId} nije pronađena.`);const payload=toDatabase({...current,...noteData}),{data,error}=await client.from('notes').update(payload).eq('id',String(noteId)).select().single();throwIfSupabaseError(error,{...META,operation:'ažuriranje bilješke',columns:Object.keys(payload)});return fromDatabase(data);}if(isSupabaseConfigured())throw new Error('Supabase bilješke trenutačno nisu dostupne.');const notes=localNotes(),note=notes.find((item)=>String(item.id)===String(noteId));if(!note)return null;Object.assign(note,noteData);writeStorage(KEY,notes);return note;}
 
 /** @param {number|string} noteId ID. @returns {Promise<void>} */
-export async function deleteNote(noteId){const client=await getSupabaseClient();if(client){const{error}=await client.from('notes').delete().eq('id',noteId);throwIfSupabaseError(error,{...META,operation:'brisanje bilješke',columns:['id']});return;}if(isSupabaseConfigured())throw new Error('Supabase bilješke trenutačno nisu dostupne.');writeStorage(KEY,localNotes().filter((item)=>item.id!==Number(noteId)));}
+export async function deleteNote(noteId){const client=await getSupabaseClient();if(client){const{error}=await client.from('notes').delete().eq('id',String(noteId));throwIfSupabaseError(error,{...META,operation:'brisanje bilješke',columns:['id']});return;}if(isSupabaseConfigured())throw new Error('Supabase bilješke trenutačno nisu dostupne.');writeStorage(KEY,localNotes().filter((item)=>String(item.id)!==String(noteId)));}
 /** @param {number|string} noteId ID. @returns {Promise<Object|null>} */
 export async function archiveNote(noteId){return updateNote(noteId,{status:'Arhivirana'});}
 /** @param {number|string} noteId ID. @returns {Promise<Object|null>} */

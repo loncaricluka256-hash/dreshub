@@ -15,9 +15,9 @@ export function getCart() {
  */
 export function addToCart(productId, quantity = 1) {
   const cart = getCart();
-  const item = cart.find((entry) => entry.productId === Number(productId));
+  const id=String(productId),item = cart.find((entry)=>String(entry.productId)===id);
   if (item) item.quantity += quantity;
-  else cart.push({ productId: Number(productId), quantity });
+  else cart.push({ productId:id, quantity });
   writeStorage(CART_KEY, cart);
   announceCartChange();
   return cart;
@@ -32,8 +32,8 @@ export function addToCart(productId, quantity = 1) {
 export function updateCartQuantity(productId, quantity) {
   const cart = getCart();
   const nextCart = quantity < 1
-    ? cart.filter((entry) => entry.productId !== Number(productId))
-    : cart.map((entry) => entry.productId === Number(productId) ? { ...entry, quantity } : entry);
+    ? cart.filter((entry)=>String(entry.productId)!==String(productId))
+    : cart.map((entry)=>String(entry.productId)===String(productId)?{...entry,productId:String(entry.productId),quantity}:entry);
   writeStorage(CART_KEY, nextCart);
   announceCartChange();
   return nextCart;

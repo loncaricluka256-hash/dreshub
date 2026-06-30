@@ -28,7 +28,7 @@ export async function uploadProductImages(productId, files) {
     return uploaded;
   }
   if(isSupabaseConfigured())throw new Error('Supabase Storage trenutačno nije dostupan; slike nisu spremljene.');
-  return selected.map((file,index)=>({id:`${productId}-preview-${index}`,productId:Number(productId),imageUrl:null,imagePath:null,isMain:index===0,imageOrder:index,fileName:file.name}));
+  return selected.map((file,index)=>({id:`${productId}-preview-${index}`,productId:String(productId),imageUrl:null,imagePath:null,isMain:index===0,imageOrder:index,fileName:file.name}));
 }
 
 /** @param {number|string} productId ID proizvoda. @returns {Promise<Array<Object>>} Slike. */
@@ -36,15 +36,15 @@ export async function getProductImages(productId) {
   const client = await getSupabaseClient();
   if (client) { const { data, error } = await client.from('product_images').select('*').eq('product_id', productId).order('image_order'); if(!error)return data??[];reportSupabaseError(error,{service:'imageService',table:'product_images',operation:'dohvat slika proizvoda',columns:['product_id','image_order']});return[]; }
   if(isSupabaseConfigured())return[];
-  const product = (await getAllProducts()).find((item) => item.id === Number(productId));
-  return (product?.images || []).map((url, index) => ({ id: `${productId}-${index}`, productId: Number(productId), imageUrl: url, imagePath: null, isMain: index === 0, imageOrder: index }));
+  const product=(await getAllProducts()).find((item)=>String(item.id)===String(productId));
+  return (product?.images || []).map((url, index) => ({ id: `${productId}-${index}`, productId:String(productId), imageUrl: url, imagePath: null, isMain: index === 0, imageOrder: index }));
 }
 
 /** @param {number|string} productId ID proizvoda. @param {number|string} imageId ID slike. @returns {Promise<void>} */
 export async function setMainProductImage(productId, imageId) {
   const client = await getSupabaseClient();
   if (client) { let result=await client.from('product_images').update({is_main:false}).eq('product_id',productId);throwIfSupabaseError(result.error,{service:'imageService',table:'product_images',operation:'Reset glavne slike nije uspio',columns:['is_main','product_id']});result=await client.from('product_images').update({is_main:true}).eq('id',imageId).eq('product_id',productId).select('image_url').single();throwIfSupabaseError(result.error,{service:'imageService',table:'product_images',operation:'Odabir glavne slike nije uspio',columns:['is_main','id','product_id','image_url']});if(result.data?.image_url){const update=await client.from('products').update({main_image_url:result.data.image_url}).eq('id',productId);throwIfSupabaseError(update.error,{service:'imageService',table:'products',operation:'Ažuriranje glavne slike proizvoda nije uspjelo',columns:['main_image_url']});}return; }
-  if(isSupabaseConfigured())throw new Error('Supabase slike trenutačno nisu dostupne.');const products=await getAllProducts(),product=products.find((item)=>item.id===Number(productId));if(!product)return;const index=Number(String(imageId).split('-').pop());if(product.images[index])product.images=[product.images[index],...product.images.filter((_,i)=>i!==index)];saveProducts(products);
+  if(isSupabaseConfigured())throw new Error('Supabase slike trenutačno nisu dostupne.');const products=await getAllProducts(),product=products.find((item)=>String(item.id)===String(productId));if(!product)return;const index=Number(String(imageId).split('-').pop());if(product.images[index])product.images=[product.images[index],...product.images.filter((_,i)=>i!==index)];saveProducts(products);
 }
 
 /** @param {number|string} imageId ID slike. @returns {Promise<void>} */
@@ -58,5 +58,5 @@ export async function deleteProductImage(imageId) {
 export async function reorderProductImages(productId, orderedImageIds) {
   const client=await getSupabaseClient();
   if(client){for(let index=0;index<orderedImageIds.length;index+=1){const{error}=await client.from('product_images').update({image_order:index}).eq('id',orderedImageIds[index]).eq('product_id',productId);throwIfSupabaseError(error,'Promjena redoslijeda slika nije uspjela');}return;}
-  if(isSupabaseConfigured())throw new Error('Supabase slike trenutačno nisu dostupne.');const products=await getAllProducts(),product=products.find((item)=>item.id===Number(productId));if(!product)return;const current=[...product.images];product.images=orderedImageIds.map((id)=>current[Number(String(id).split('-').pop())]).filter(Boolean);saveProducts(products);
+  if(isSupabaseConfigured())throw new Error('Supabase slike trenutačno nisu dostupne.');const products=await getAllProducts(),product=products.find((item)=>String(item.id)===String(productId));if(!product)return;const current=[...product.images];product.images=orderedImageIds.map((id)=>current[Number(String(id).split('-').pop())]).filter(Boolean);saveProducts(products);
 }

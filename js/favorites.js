@@ -23,11 +23,11 @@ export async function initFavorites() {
     const favorite = event.target.closest('[data-favorite]');
     const reserve = event.target.closest('[data-reserve]');
     if (favorite) {
-      toggleFavorite(Number(favorite.dataset.favorite));
+      toggleFavorite(favorite.dataset.favorite);
       showToast('Uklonjeno iz omiljenih.');
       renderFavorites();
     }
-    if (reserve) await openReservationModal(Number(reserve.dataset.reserve));
+    if (reserve) await openReservationModal(reserve.dataset.reserve);
   });
 }
 

@@ -9,12 +9,12 @@ const MAX_RECENT = 4;
  * @returns {void}
  */
 export function addRecentlyViewed(productId) {
-  const id = Number(productId);
-  const recent = readStorage(RECENT_KEY, []).filter((item) => item !== id);
+  const id=String(productId);
+  const recent=readStorage(RECENT_KEY,[]).map(String).filter((item)=>item!==id);
   writeStorage(RECENT_KEY, [id, ...recent].slice(0, MAX_RECENT));
 }
 
 /** @returns {Array<number>} Identifikatori nedavno pregledanih proizvoda. */
 export function getRecentlyViewed() {
-  return readStorage(RECENT_KEY, []);
+  return readStorage(RECENT_KEY,[]).map(String);
 }
