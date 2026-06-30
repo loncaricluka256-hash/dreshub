@@ -1,0 +1,23 @@
+.product-detail { display: grid; grid-template-columns: minmax(0, 1.06fr) minmax(350px, .94fr); gap: clamp(32px, 6vw, 78px); align-items: start; }
+.product-gallery { position: sticky; top: 104px; min-width: 0; }
+.main-image { position: relative; width: 100%; padding: 0; overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius); background: radial-gradient(circle, #1a1d20, #0a0c0d 68%); }
+.main-image img { width: 100%; aspect-ratio: 1 / 1; padding: clamp(24px, 6vw, 70px); object-fit: contain; transition: transform .35s ease; }
+.main-image:hover img { transform: scale(1.025); }
+.main-image > span { position: absolute; right: 14px; bottom: 14px; padding: 7px 10px; border: 1px solid #3a3d3f; border-radius: 5px; background: rgba(7,8,9,.76); color: #d7d8d7; font-size: .62rem; text-transform: uppercase; }
+.thumbnail-list { margin-top: 12px; display: flex; gap: 10px; overflow-x: auto; }
+.thumbnail { flex: 0 0 78px; padding: 6px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: #0e1012; }
+.thumbnail.active { border-color: var(--color-gold); }
+.thumbnail img { width: 100%; aspect-ratio: 1; object-fit: contain; }
+.product-info { padding-top: 18px; }
+.product-info h1 { margin-bottom: 20px; }
+.product-lead { color: #afb2b4; font-size: .9rem; line-height: 1.8; }
+.detail-list { margin: 28px 0 24px; border-top: 1px solid var(--color-border); }
+.detail-list div { padding: 12px 0; display: flex; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--color-border); font-size: .75rem; }
+.detail-list dt { color: var(--color-muted); }.detail-list dd { margin: 0; text-align: right; }
+.detail-price { margin: 20px 0; display: flex; align-items: baseline; gap: 12px; }
+.detail-price del { color: #777b7e; }.detail-price strong { color: var(--color-gold-light); font-size: 1.65rem; }
+.product-actions { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; }
+.icon-button { width: 46px; height: 46px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: transparent; color: #fff; font-size: 1.35rem; }
+.icon-button.active { border-color: var(--color-gold); color: var(--color-gold-light); }
+.purchase-note { margin-top: 14px; color: #777c80; font-size: .65rem; }
+.similar-products { margin-top: clamp(60px, 9vw, 110px); padding-top: 40px; border-top: 1px solid var(--color-border); }

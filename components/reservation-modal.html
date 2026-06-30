@@ -1,0 +1,18 @@
+<dialog class="modal reservation-modal" data-component="reservation-modal" aria-labelledby="reservation-title">
+  <div class="modal-card">
+    <button class="modal-close" type="button" data-close-modal aria-label="Zatvori">×</button>
+    <div data-reservation-form>
+      <p class="eyebrow">Brza rezervacija</p>
+      <h2 id="reservation-title">Rezerviraj dres</h2>
+      <p class="modal-product" data-reservation-product></p>
+      <form>
+        <label>Ime i prezime<input name="name" type="text" autocomplete="name" minlength="3" required placeholder="Vaše ime i prezime"></label>
+        <label>Broj mobitela<input name="phone" type="tel" autocomplete="tel" required pattern="[0-9+ ()-]{7,}" placeholder="098 123 4567"></label>
+        <label>Napomena <span>(nije obavezno)</span><textarea name="note" rows="3" placeholder="Veličina, dostava ili druga napomena"></textarea></label>
+        <button class="button button-primary button-wide" type="submit">Potvrdi rezervaciju</button>
+        <small>Slanjem rezervacije ne vršite plaćanje.</small>
+      </form>
+    </div>
+    <div class="modal-success" data-reservation-success hidden><span aria-hidden="true">✓</span><h2>Rezervacija je zaprimljena</h2><p>Hvala! Javit ćemo vam se uskoro radi potvrde detalja.</p><button class="button button-primary" type="button" data-close-modal>U redu</button></div>
+  </div>
+</dialog>

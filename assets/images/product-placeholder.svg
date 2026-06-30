@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 700" role="img" aria-labelledby="title">
+  <title id="title">Proizvod nema sliku</title>
+  <rect width="600" height="700" fill="#101214"/>
+  <path d="M210 155 270 120h60l60 35 95 55-55 105-55-28v250H225V287l-55 28-55-105z" fill="#181b1f" stroke="#353a40" stroke-width="8"/>
+  <circle cx="300" cy="355" r="42" fill="none" stroke="#d5a935" stroke-width="10"/>
+  <text x="300" y="620" fill="#8d939a" font-family="Arial,sans-serif" font-size="26" text-anchor="middle">DRESHUB</text>
+</svg>

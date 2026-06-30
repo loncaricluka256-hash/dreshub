@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="DresHub administracijska aplikacija."><title>DresHub Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/variables.css"><link rel="stylesheet" href="css/main.css"><link rel="stylesheet" href="css/admin.css"><link rel="stylesheet" href="css/responsive.css">
+</head>
+<body class="admin-body">
+  <section class="admin-login" data-admin-login>
+    <form class="login-card" data-login-form><span class="brand-mark">DH</span><p class="eyebrow">Siguran pristup</p><h1>DresHub Admin</h1><p>Prijavite se za upravljanje trgovinom.</p><label>Lozinka<input type="password" name="password" autocomplete="current-password" required autofocus></label><p class="form-error" data-login-error aria-live="polite"></p><button class="button button-primary button-wide" type="submit">Prijava</button><a href="index.html">← Povratak u trgovinu</a></form>
+  </section>
+
+  <div class="admin-app" data-admin-app hidden>
+    <aside class="admin-sidebar" data-admin-sidebar>
+      <div class="admin-brand"><span class="brand-mark">DH</span><span><strong>DRES <em>HUB</em></strong><small>Admin workspace</small></span></div>
+      <nav class="admin-nav" aria-label="Admin navigacija">
+        <button class="active" data-view-target="dashboard"><span>◫</span>Dashboard</button>
+        <button data-view-target="products"><span>◈</span>Proizvodi</button>
+        <button data-view-target="reservations"><span>◷</span>Rezervacije <b data-active-reservations>0</b></button>
+        <button data-view-target="orders"><span>▣</span>Narudžbe</button>
+        <button data-view-target="finance"><span>€</span>Financije</button>
+        <button data-view-target="notes"><span>◇</span>Bilješke</button>
+        <button data-view-target="changes"><span>↻</span>Povijest promjena</button>
+        <button data-view-target="transactions"><span>⇄</span>Povijest transakcija</button>
+        <button data-view-target="settings"><span>⚙</span>Postavke</button>
+      </nav>
+      <div class="sidebar-footer"><a href="index.html">Otvori trgovinu ↗</a><button data-logout>Odjava</button></div>
+    </aside>
+
+    <div class="admin-workspace">
+      <header class="admin-topbar"><button class="admin-menu-toggle" type="button" data-admin-menu aria-label="Otvori izbornik">☰</button><div><small>DresHub poslovni centar</small><strong data-current-view>Dashboard</strong></div><div class="admin-profile"><span>A</span><div><strong>Admin</strong><small>Administrator</small></div></div></header>
+      <main class="admin-main">
+        <section class="admin-view active" data-view="dashboard">
+          <header class="view-header"><div><p class="eyebrow">Pregled poslovanja</p><h1>Dashboard</h1><p data-dashboard-date></p></div><button class="admin-primary-action" data-view-jump="products" data-open-product>+ Novi proizvod</button></header>
+          <div class="metric-grid" data-metrics></div>
+          <div class="dashboard-grid">
+            <section class="admin-panel panel-wide"><div class="panel-heading"><h2>Zadnje rezervacije</h2><button data-view-jump="reservations">Prikaži sve</button></div><div data-dashboard-reservations></div></section>
+            <section class="admin-panel"><div class="panel-heading"><h2>Mala zaliha</h2><button data-view-jump="products">Proizvodi</button></div><div data-low-stock></div></section>
+            <section class="admin-panel"><div class="panel-heading"><h2>Podsjetnici</h2><button data-view-jump="notes">Bilješke</button></div><div data-reminders></div></section>
+            <section class="admin-panel panel-wide"><div class="panel-heading"><h2>Zadnje transakcije</h2><button data-view-jump="transactions">Povijest</button></div><div data-dashboard-transactions></div></section>
+          </div>
+        </section>
+
+        <section class="admin-view" data-view="products">
+          <header class="view-header"><div><p class="eyebrow">Katalog i zaliha</p><h1>Proizvodi</h1><p>Upravljanje ponudom, cijenama i dostupnošću.</p></div><button class="admin-primary-action" data-open-product>+ Dodaj proizvod</button></header>
+          <div class="admin-toolbar"><label class="admin-search">⌕<input type="search" data-product-search placeholder="Pretraži proizvode…"></label><select data-product-status><option value="active">Aktivni</option><option value="archived">Arhivirani</option><option value="all">Svi proizvodi</option></select><span data-products-summary></span></div>
+          <div class="product-admin-list" data-products-list></div>
+        </section>
+
+        <section class="admin-view" data-view="reservations">
+          <header class="view-header"><div><p class="eyebrow">Kupci i prodaja</p><h1>Rezervacije</h1><p>Pratite svaku rezervaciju od upita do završene prodaje.</p></div></header>
+          <div class="status-tabs" data-reservation-tabs><button class="active" data-status="active">Aktivne</button><button data-status="completed">Završene</button><button data-status="cancelled">Otkazane</button><button data-status="expired">Istekle</button></div>
+          <div class="reservation-list" data-reservations-list></div>
+        </section>
+
+        <section class="admin-view" data-view="orders">
+          <header class="view-header"><div><p class="eyebrow">Nabava</p><h1>Narudžbe</h1><p>Planirajte nabavu bez utjecaja na stanje do zaključivanja.</p></div><button class="admin-primary-action" data-open-order>+ Otvori novu narudžbu</button></header>
+          <div class="status-tabs" data-order-tabs><button class="active" data-order-status="open">Otvorene</button><button data-order-status="closed">Zaključene</button></div><div class="orders-grid" data-orders-list></div>
+        </section>
+
+        <section class="admin-view" data-view="finance">
+          <header class="view-header"><div><p class="eyebrow">Rezultati</p><h1>Financije</h1><p>Prodaja, troškovi i profit na jednom mjestu.</p></div><button class="admin-primary-action" data-open-transaction>+ Nova transakcija</button></header>
+          <div class="metric-grid finance-metrics" data-finance-metrics></div>
+          <div class="admin-toolbar"><select data-finance-period><option value="all">Sve vrijeme</option><option value="today">Danas</option><option value="week">Ovaj tjedan</option><option value="month">Ovaj mjesec</option></select><select data-finance-type><option value="all">Svi tipovi</option><option value="sales">Prodaje</option><option value="expenses">Troškovi</option><option value="profit">Profit</option></select></div>
+          <section class="admin-panel"><div class="panel-heading"><h2>Financijski pregled</h2></div><div data-finance-list></div></section>
+        </section>
+
+        <section class="admin-view" data-view="notes">
+          <header class="view-header"><div><p class="eyebrow">Organizator</p><h1>Bilješke</h1><p>Zadaci, ideje i podsjetnici povezani s poslovanjem.</p></div><button class="admin-primary-action" data-open-note>+ Nova bilješka</button></header>
+          <div class="admin-toolbar"><select data-note-status><option value="all">Svi statusi</option><option>Aktivna</option><option>U tijeku</option><option>Završena</option><option>Arhivirana</option></select><select data-note-priority><option value="all">Svi prioriteti</option><option>Nizak</option><option>Srednji</option><option>Visok</option></select></div><div class="notes-grid" data-notes-list></div>
+        </section>
+
+        <section class="admin-view" data-view="changes">
+          <header class="view-header"><div><p class="eyebrow">Audit zapis</p><h1>Povijest promjena</h1><p>Operativne promjene odvojene od financijskih transakcija.</p></div></header>
+          <div class="admin-toolbar"><select data-change-category><option value="all">Sve kategorije</option><option value="products">Proizvodi</option><option value="reservations">Rezervacije</option><option value="orders">Narudžbe</option><option value="prices">Cijene</option><option value="quantities">Količine</option></select><select data-change-period><option value="all">Sve vrijeme</option><option value="today">Danas</option><option value="week">Ovaj tjedan</option><option value="month">Ovaj mjesec</option></select></div><div class="history-list" data-changes-list></div>
+        </section>
+
+        <section class="admin-view" data-view="transactions">
+          <header class="view-header"><div><p class="eyebrow">Financijski trag</p><h1>Povijest transakcija</h1><p>Prodaje, troškovi, povrati i ostala financijska kretanja.</p></div><button class="admin-primary-action" data-open-transaction>+ Nova transakcija</button></header>
+          <div class="admin-toolbar"><select data-transaction-type><option value="all">Svi tipovi</option><option>Prodaja</option><option>Trošak</option><option>Profit</option><option>Povrat</option><option>Dostava</option><option>Carina</option><option>Popust</option><option>Ostalo</option></select></div><div class="transaction-list" data-transactions-list></div>
+        </section>
+
+        <section class="admin-view" data-view="settings">
+          <header class="view-header"><div><p class="eyebrow">Konfiguracija</p><h1>Postavke</h1><p>Javni podaci trgovine, rezervacije, sigurnost i backup.</p></div></header>
+          <form class="settings-layout" data-settings-form>
+            <section class="admin-panel"><div class="panel-heading"><h2>Trgovina i kontakt</h2></div><div class="form-grid"><label>Naziv trgovine<input name="storeName" required></label><label>E-mail<input type="email" name="email" required></label><label>Telefon Luki<input name="phoneLuki"></label><label>Telefon Blaž<input name="phoneBlaz"></label><label>Instagram<input name="instagram"></label><label>Logo<input type="file" name="logo" accept="image/*"></label></div></section>
+            <section class="admin-panel"><div class="panel-heading"><h2>Prikaz i rezervacije</h2></div><div class="form-grid"><label class="field-wide">Tekst obavijesti<input name="notification"></label><label class="checkbox-field"><input type="checkbox" name="notificationVisible"> Prikaži traku obavijesti</label><label>Trajanje rezervacije (sati)<input type="number" min="1" max="168" name="reservationHours"></label><label>Tema<select name="theme"><option value="dark">Tamna</option><option value="darker">Duboko crna</option></select></label><label class="field-wide">Oznake proizvoda<input name="badges" placeholder="NOVO, POPULARNO, AKCIJA"></label></div></section>
+            <section class="admin-panel"><div class="panel-heading"><h2>Sigurnost</h2></div><div class="form-grid"><label>Nova admin lozinka<input type="password" name="newPassword" autocomplete="new-password"></label><label>Sigurnosno pitanje<small>Kako se zvao pas kojeg smo odgajali mi?</small><input name="securityAnswer" autocomplete="off"></label></div></section>
+            <section class="admin-panel settings-actions"><div><h2>Backup i export</h2><p>Preuzmite cjelovitu kopiju svih lokalnih podataka.</p></div><button class="admin-secondary-action" type="button" data-export>Export JSON</button><label class="admin-secondary-action import-label">Uvezi backup<input type="file" accept="application/json" data-import hidden></label></section>
+            <button class="admin-primary-action settings-save" type="submit">Spremi postavke</button>
+          </form>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="admin-dialog" data-product-dialog><form method="dialog" class="dialog-card product-form" data-product-form><header><div><p class="eyebrow">Katalog</p><h2 data-product-dialog-title>Novi proizvod</h2></div><button value="cancel" aria-label="Zatvori">×</button></header><input type="hidden" name="id"><div class="form-grid"><label class="field-wide">Naziv<input name="name" required></label><label>Klub / reprezentacija<input name="club" required></label><label>Igrač<input name="player" required></label><label>Kategorija<select name="type"><option value="club">Klub</option><option value="national">Reprezentacija</option></select></label><label>Verzija<select name="version"><option>Fan Version</option><option>Player Version</option><option>Retro</option></select></label><label>Veličine<input name="sizes" placeholder="S, M, L" required></label><label>Kupovna cijena<input type="number" name="costPrice" min="0" step="0.01" required></label><label>Prodajna cijena<input type="number" name="price" min="0" step="0.01" required></label><label>Akcijska / stara cijena<input type="number" name="oldPrice" min="0" step="0.01"></label><label>Količina<input type="number" name="stock" min="0" required></label><label>Oznaka<select name="badge"><option>NOVO</option><option>POPULARNO</option><option>AKCIJA</option><option>ZADNJI KOMAD</option></select></label><label class="field-wide">Opis<textarea name="description" rows="4" required></textarea></label><label class="field-wide">Slike (1–5)<input type="file" name="images" accept="image/*" multiple><small>Odaberite iz galerije ili mape. Prva odabrana slika postaje glavna.</small></label><div class="image-preview field-wide" data-image-preview></div></div><footer><button class="admin-secondary-action" value="cancel">Odustani</button><button class="admin-primary-action" type="submit" value="save">Spremi proizvod</button></footer></form></dialog>
+
+  <dialog class="admin-dialog side-dialog" data-reservation-dialog><article class="dialog-card" data-reservation-detail></article></dialog>
+
+  <dialog class="admin-dialog" data-order-dialog><form method="dialog" class="dialog-card order-form" data-order-form><header><div><p class="eyebrow">Nabava</p><h2>Nova narudžba</h2></div><button value="cancel">×</button></header><label>Naziv narudžbe<input name="title" required placeholder="Npr. Ljetna nabava"></label><label>Napomena<textarea name="note" rows="2"></textarea></label><div class="order-builder"><div class="order-add-row"><select data-order-product-select></select><button class="admin-secondary-action" type="button" data-add-order-product>Dodaj postojeći</button><button class="admin-secondary-action" type="button" data-add-order-custom>+ Novi proizvod</button></div><div data-order-items></div></div><footer><button class="admin-secondary-action" value="cancel">Odustani</button><button class="admin-primary-action" type="submit" value="save">Spremi otvorenu narudžbu</button></footer></form></dialog>
+
+  <dialog class="admin-dialog" data-transaction-dialog><form method="dialog" class="dialog-card compact-form" data-transaction-form><header><div><p class="eyebrow">Financije</p><h2>Nova transakcija</h2></div><button value="cancel">×</button></header><label>Tip<select name="type"><option>Prodaja</option><option>Trošak</option><option>Profit</option><option>Povrat</option><option>Dostava</option><option>Carina</option><option>Popust</option><option>Ostalo</option></select></label><label>Iznos<input type="number" name="amount" min="0" step="0.01" required></label><label>Opis<input name="description" required></label><label>Datum<input type="datetime-local" name="date" required></label><footer><button class="admin-secondary-action" value="cancel">Odustani</button><button class="admin-primary-action" type="submit" value="save">Dodaj transakciju</button></footer></form></dialog>
+
+  <dialog class="admin-dialog" data-note-dialog><form method="dialog" class="dialog-card" data-note-form><header><div><p class="eyebrow">Organizator</p><h2 data-note-title>Nova bilješka</h2></div><button value="cancel">×</button></header><input type="hidden" name="id"><div class="form-grid"><label class="field-wide">Naslov<input name="title" required></label><label class="field-wide">Opis<textarea name="description" rows="3"></textarea></label><label>Tip<select name="type"><option>Narudžba</option><option>Podsjetnik</option><option>Ideja</option><option>Kupac</option><option>Općenito</option></select></label><label>Iznos (opcionalno)<input type="number" name="amount" step="0.01"></label><label>Rok<input type="date" name="dueDate"></label><label>Prioritet<select name="priority"><option>Nizak</option><option selected>Srednji</option><option>Visok</option></select></label><label>Status<select name="status"><option>Aktivna</option><option>U tijeku</option><option>Završena</option><option>Arhivirana</option></select></label><label>Tagovi<input name="tags" placeholder="nabava, hitno"></label><label>Povezani proizvod<select name="productId" data-note-product><option value="">Nije povezano</option></select></label><label>Povezana narudžba<select name="orderId" data-note-order><option value="">Nije povezano</option></select></label><label class="checkbox-field"><input type="checkbox" name="pinned"> Prikvači na vrh</label></div><footer><button class="admin-secondary-action" value="cancel">Odustani</button><button class="admin-primary-action" type="submit" value="save">Spremi bilješku</button></footer></form></dialog>
+
+  <div class="toast" data-toast role="status"></div>
+  <script type="module" src="js/admin.js"></script>
+</body></html>

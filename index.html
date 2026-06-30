@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="hr">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="DresHub — premium nogometni dresovi klubova i reprezentacija.">
+  <title>DresHub | Premium nogometni dresovi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/variables.css"><link rel="stylesheet" href="css/main.css"><link rel="stylesheet" href="css/navbar.css"><link rel="stylesheet" href="css/cards.css"><link rel="stylesheet" href="css/filters.css"><link rel="stylesheet" href="css/footer.css"><link rel="stylesheet" href="css/responsive.css">
+</head>
+<body>
+  <div class="notice"><span>Besplatna dostava za 2 ili više dresova</span><a href="contact.html">Trebate pomoć? Kontaktirajte nas</a></div>
+  <div data-navbar-slot></div>
+  <main>
+    <section class="catalog-intro page-shell"><div><p class="eyebrow">Nova kolekcija 2026</p><h1>Dres koji nosi <span>vašu priču.</span></h1></div><p>Originalan stil. Provjerena kvaliteta. Brza i jednostavna rezervacija.</p></section>
+    <section class="catalog page-shell" aria-labelledby="catalog-title">
+      <form class="catalog-controls" data-catalog-form>
+        <label class="search-field"><span class="visually-hidden">Pretraži dresove</span><span aria-hidden="true">⌕</span><input name="query" type="search" placeholder="Pretraži klub, igrača ili dres…" autocomplete="off"></label>
+        <div class="filter-bar">
+          <label><span>Vrsta</span><select name="type"><option value="all">Sve</option><option value="club">Klubovi</option><option value="national">Reprezentacije</option></select></label>
+          <label><span>Veličina</span><select name="size"><option value="all">Sve</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option></select></label>
+          <label><span>Verzija</span><select name="version"><option value="all">Sve</option><option>Fan Version</option><option>Player Version</option><option>Retro</option></select></label>
+          <label><span>Cijena</span><select name="price"><option value="all">Sve</option><option value="under40">Do 40 €</option><option value="40to45">40–45 €</option><option value="over45">Više od 45 €</option></select></label>
+          <label><span>Dostupnost</span><select name="availability"><option value="all">Sve</option><option value="available">Na stanju</option><option value="sold">Rasprodano</option></select></label>
+          <label class="sort-control"><span>Sortiraj</span><select name="sort"><option value="newest">Najnovije</option><option value="price-asc">Najjeftinije</option><option value="price-desc">Najskuplje</option><option value="name-asc">Naziv A–Z</option><option value="name-desc">Naziv Z–A</option></select></label>
+          <button class="reset-filters" type="reset">Poništi filtre</button>
+        </div>
+      </form>
+      <div class="section-heading"><div><p class="eyebrow">Odabrano za vas</p><h2 id="catalog-title">Svi dresovi</h2></div><span class="product-count" data-product-count aria-live="polite"></span></div>
+      <div class="product-grid" data-product-grid><p class="loading">Učitavanje dresova…</p></div>
+    </section>
+    <section class="recent-section page-shell" data-recent-section hidden><div class="section-heading"><div><p class="eyebrow">Pogledajte ponovno</p><h2>Nedavno pregledani</h2></div></div><div class="product-grid compact-grid" data-recent-grid></div></section>
+    <section class="contact-strip page-shell" aria-label="Brzi kontakt"><a href="tel:+385981888236"><span>01</span><div><small>Luki</small><strong>098 188 8236</strong></div></a><a href="tel:+385998258395"><span>02</span><div><small>Blaž</small><strong>099 825 8395</strong></div></a><a href="mailto:loncaricluka256@gmail.com"><span>@</span><div><small>E-mail</small><strong>loncaricluka256@gmail.com</strong></div></a></section>
+  </main>
+  <div data-footer-slot></div><div data-reservation-slot></div><div data-lightbox-slot></div>
+  <script type="module" src="js/app.js"></script>
+</body></html>
