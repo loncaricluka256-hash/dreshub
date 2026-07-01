@@ -56,13 +56,15 @@ export function initFilters(products, render) {
     suggestions.hidden = !items.length;
   };
   const update = () => {
+    renderSuggestions();
     cancelAnimationFrame(frame);
-    frame = requestAnimationFrame(() => { render(applyCatalogControls(products, form, searchIndex)); renderSuggestions(); });
+    frame = requestAnimationFrame(() => render(applyCatalogControls(products, form, searchIndex)));
   };
   const setPanel = (open) => {
     advanced?.classList.toggle('open', open);
     advanced?.setAttribute('aria-hidden', String(!open));
     desktopToggle?.setAttribute('aria-expanded', String(open));
+    if (desktopToggle) desktopToggle.innerHTML = `${open ? 'Sakrij filtere' : 'Prikaži sve filtere'} <span>${open ? '−' : '+'}</span>`;
     mobileToggle?.setAttribute('aria-expanded', String(open));
     document.body.classList.toggle('filters-open', open && matchMedia('(max-width: 640px)').matches);
   };
@@ -76,7 +78,7 @@ export function initFilters(products, render) {
   form.addEventListener('input', update);
   form.addEventListener('change', update);
   form.addEventListener('reset', () => window.setTimeout(() => { setPanel(false); closeSuggestions(); update(); }));
-  desktopToggle?.addEventListener('click', () => setPanel(!advanced.classList.contains('open')));
+  desktopToggle?.addEventListener('click', () => setPanel(!advanced?.classList.contains('open')));
   mobileToggle?.addEventListener('click', () => setPanel(true));
   closeButton?.addEventListener('click', () => setPanel(false));
   advanced?.addEventListener('click', (event) => { if (event.target === advanced) setPanel(false); });

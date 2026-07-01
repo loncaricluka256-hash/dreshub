@@ -19,9 +19,9 @@
       </div>
       <div class="filter-actions">
         <div class="primary-filters">
-          <label><span>Sortiraj</span><select name="sort"><option value="newest">Najnovije</option><option value="price-asc">Najjeftinije</option><option value="price-desc">Najskuplje</option><option value="name-asc">Naziv A–Z</option><option value="name-desc">Naziv Z–A</option></select></label>
+          <label><span>Vrsta</span><select name="type"><option value="all">Sve</option><option value="club">Klubovi</option><option value="national">Reprezentacije</option></select></label>
           <label><span>Veličina</span><select name="size"><option value="all">Sve veličine</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option></select></label>
-          <label><span>Cijena</span><select name="price"><option value="all">Sve cijene</option><option value="under40">Do 40 €</option><option value="40to45">40–45 €</option><option value="over45">Više od 45 €</option></select></label>
+          <label><span>Sortiraj</span><select name="sort"><option value="newest">Najnovije</option><option value="price-asc">Najjeftinije</option><option value="price-desc">Najskuplje</option><option value="name-asc">Naziv A–Z</option><option value="name-desc">Naziv Z–A</option></select></label>
         </div>
         <button class="filter-toggle" type="button" data-filter-toggle aria-expanded="false">Prikaži sve filtere <span>＋</span></button>
         <button class="mobile-filter-toggle" type="button" data-mobile-filter-toggle aria-expanded="false">Filtriraj <span>⚙</span></button>
@@ -30,8 +30,8 @@
         <div class="filter-panel">
           <header><div><p class="eyebrow">Precizniji odabir</p><h2>Filteri</h2></div><button type="button" data-filter-close aria-label="Zatvori filtre">×</button></header>
           <div class="filter-bar">
-            <label><span>Vrsta</span><select name="type"><option value="all">Sve</option><option value="club">Klubovi</option><option value="national">Reprezentacije</option></select></label>
             <label><span>Verzija</span><select name="version"><option value="all">Sve</option><option>Fan Version</option><option>Player Version</option><option>Retro</option></select></label>
+            <label><span>Cijena</span><select name="price"><option value="all">Sve cijene</option><option value="under40">Do 40 €</option><option value="40to45">40–45 €</option><option value="over45">Više od 45 €</option></select></label>
             <label><span>Dostupnost</span><select name="availability"><option value="all">Sve</option><option value="available">Na stanju</option><option value="sold">Rasprodano</option></select></label>
           </div>
           <button class="reset-filters" type="reset">Poništi sve filtere</button>

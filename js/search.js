@@ -21,8 +21,15 @@ const NORMALIZED_LEAGUES = LEAGUES.map((league) => ({
   ...league,
   normalizedName: normalizeSearchText(league.name),
   normalizedAliases: league.aliases.map(normalizeSearchText),
-  normalizedClubs: new Set(league.clubs.map(normalizeSearchText))
+  normalizedClubs: league.clubs.map(normalizeSearchText)
 }));
+const ALL_NORMALIZED_CLUBS = NORMALIZED_LEAGUES.flatMap((league) => league.normalizedClubs.map((club) => ({ club, league })));
+
+function entryContainsClub(entry, club, league) {
+  const contains = entry.club === club || entry.club.includes(club) || entry.haystack.includes(club);
+  if (!contains) return false;
+  return !ALL_NORMALIZED_CLUBS.some((candidate) => candidate.league !== league && candidate.club !== club && candidate.club.includes(club) && entry.haystack.includes(candidate.club));
+}
 
 function editDistance(a, b) {
   if (Math.abs(a.length - b.length) > 2) return 3;
@@ -40,7 +47,9 @@ function editDistance(a, b) {
 
 function findLeague(query) {
   if (!query) return null;
-  return NORMALIZED_LEAGUES.find((league) => league.normalizedAliases.some((alias) => alias === query || (query.length >= 5 && editDistance(alias, query) <= 2))) || null;
+  const exact = NORMALIZED_LEAGUES.find((league) => league.normalizedAliases.includes(query));
+  if (exact) return exact;
+  return NORMALIZED_LEAGUES.find((league) => league.normalizedAliases.some((alias) => query.length >= 5 && editDistance(alias, query) <= 2)) || null;
 }
 
 /**
@@ -70,7 +79,7 @@ export function searchProductIndex(index, query) {
   const league = findLeague(term);
   const tokens = term.split(' ').filter(Boolean);
   return index.map((entry) => {
-    const inLeague = league?.normalizedClubs.has(entry.club);
+    const inLeague = Boolean(league?.normalizedClubs.some((club) => entryContainsClub(entry, club, league)));
     if (league && !inLeague) return null;
     if (!league && !tokens.every((token) => entry.haystack.includes(token))) return null;
     let score = inLeague ? 500 : 0;
@@ -90,6 +99,11 @@ export function getSearchSuggestions(index, query, limit = 8) {
   const candidates = [];
   NORMALIZED_LEAGUES.forEach((league) => {
     if (league.normalizedName.includes(term) || league.normalizedAliases.some((alias) => alias.includes(term))) candidates.push({ label: league.name, type: 'Liga', score: league.normalizedName.startsWith(term) ? 100 : 60 });
+    league.clubs.forEach((clubName, clubIndex) => {
+      const normalizedClub = league.normalizedClubs[clubIndex];
+      if (!normalizedClub.includes(term) || !index.some((entry) => entryContainsClub(entry, normalizedClub, league))) return;
+      candidates.push({ label: clubName, type: 'Klub', score: normalizedClub.startsWith(term) ? 95 : 55 });
+    });
   });
   const seen = new Set(candidates.map((item) => normalizeSearchText(item.label)));
   index.forEach(({ product, club, player, name }) => {
