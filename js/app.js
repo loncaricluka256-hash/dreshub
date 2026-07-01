@@ -54,10 +54,10 @@ async function init() {
     initLightbox();
     const products = await loadProducts();
     renderProducts(products);
-    initFilters(products, renderProducts);
+    const catalogFilters = initFilters(products, renderProducts);
     initProductActions();
     window.addEventListener('dreshub:reservation-created',async(event)=>{const fresh=(await loadProducts()).find((product)=>String(product.id)===String(event.detail?.productId));if(!fresh)return;document.querySelectorAll('[data-product-id]').forEach((card)=>{if(String(card.dataset.productId)===String(fresh.id))card.outerHTML=createProductCard(fresh);});});
-    await subscribeToProductChanges((freshProducts)=>{products.splice(0,products.length,...freshProducts);renderProducts(products);});
+    await subscribeToProductChanges((freshProducts)=>{products.splice(0,products.length,...freshProducts);catalogFilters.rebuild();});
 
     const recentIds = getRecentlyViewed();
     const recentSection = document.querySelector('[data-recent-section]');

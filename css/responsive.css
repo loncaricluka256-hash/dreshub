@@ -35,6 +35,8 @@
   .catalog { padding-top: 18px; }
   .search-field input { height: 54px; font-size: .82rem; }
   .filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .advanced-filters .filter-bar { grid-template-columns: 1fr; }
+  .advanced-filters .reset-filters { grid-column: auto; }
   .sort-control { grid-column: 1 / -1; }.reset-filters { grid-column: 1 / -1; }
   .section-heading { margin-top: 30px; align-items: start; }.product-count { padding-top: 4px; }
   .product-grid, .compact-grid { grid-template-columns: 1fr; gap: 14px; }
