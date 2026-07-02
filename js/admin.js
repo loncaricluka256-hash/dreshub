@@ -7,7 +7,7 @@ import { getReservations, subscribeToReservationChanges } from '../services/rese
 import { createPurchaseOrder, updatePurchaseOrder, finalizePurchaseOrder, copyPurchaseOrder } from '../services/purchaseOrderService.js';
 import { createTransaction } from '../services/transactionService.js';
 import { createNote, updateNote, deleteNote, archiveNote, completeNote } from '../services/noteService.js';
-import { uploadProductImages, getProductImages, setMainProductImage } from '../services/imageService.js';
+import { uploadProductImages, getProductImages, setMainProductImage, replaceProductImage, deleteProductImage, reorderProductImages } from '../services/imageService.js';
 import { getAdminPassword } from '../services/settingsService.js';
 import { formatPrice, escapeHTML } from './utils.js';
 
@@ -120,7 +120,7 @@ function renderProducts() {
 }
 
 /** Otvara formu proizvoda. @param {Object|null} product Postojeći proizvod. @returns {void} */
-function openProductDialog(product = null) {
+async function openProductDialog(product = null) {
   const dialog = document.querySelector('[data-product-dialog]');
   const form = dialog.querySelector('form');
   releaseImagePreviews(form); form.reset(); form.elements.id.value = product?.id || '';
@@ -129,17 +129,22 @@ function openProductDialog(product = null) {
   form.elements.price.value = product ? (product.oldPrice || product.price) : '';
   form.elements.oldPrice.value = product?.oldPrice ? product.price : '';
   form.elements.sizes.value = product?.sizes?.join(', ') || '';
-  form.dataset.existingImages = JSON.stringify(product?.images || []);
-  form.dataset.newImages = '[]';
-  form.dataset.mainImage = '0';
-  renderImagePreview(product?.images || []);
+  form.imageItems = [];
+  form.deletedImageIds = [];
+  if (product?.id) {
+    const storedImages = await getProductImages(product.id);
+    form.imageItems = storedImages.map((image,index)=>({kind:'existing',id:image.id,url:image.image_url,path:image.image_path,isMain:Boolean(image.is_main),order:Number(image.image_order??index)}));
+    if(form.imageItems.length&&!form.imageItems.some((image)=>image.isMain))form.imageItems[0].isMain=true;
+  }
+  renderImagePreview(form);
   dialog.showModal();
 }
 
 /** Prikazuje slike proizvoda i omogućuje izbor glavne slike. @param {Array<string>} images Slike. @returns {void} */
-function renderImagePreview(images) {
-  const selected = Number(document.querySelector('[data-product-form]').dataset.mainImage || 0);
-  document.querySelector('[data-image-preview]').innerHTML = images.map((image, index) => `<button type="button" class="${index === selected ? 'active' : ''}" data-main-image="${index}"><img src="${escapeHTML(image)}" alt="Preview ${index + 1}"><span>${index === selected ? 'Glavna' : 'Odaberi'}</span></button>`).join('');
+function renderImagePreview(form) {
+  const images=form.imageItems||[],preview=form.querySelector('[data-image-preview]');
+  if(!images.length){preview.innerHTML='<div class="image-preview-empty">Proizvod trenutačno nema slika. Bit će prikazan placeholder.</div>';return;}
+  preview.innerHTML=images.map((image,index)=>`<article class="image-editor-card ${image.isMain?'active':''}" data-image-key="${escapeHTML(image.id??image.key)}" draggable="true"><div class="image-editor-visual"><img src="${escapeHTML(image.previewUrl||image.url)}" alt="Slika proizvoda ${index+1}">${image.isMain?'<strong>Glavna slika</strong>':''}${image.replacementFile?'<small>Zamjena odabrana</small>':''}</div><div class="image-editor-actions"><button type="button" data-image-main ${image.isMain?'disabled':''}>${image.isMain?'Glavna':'Postavi glavnu'}</button><button type="button" data-image-replace>Zamijeni</button><button type="button" data-image-delete class="danger">Obriši</button><div><button type="button" data-image-left ${index===0?'disabled':''} aria-label="Pomakni lijevo">←</button><span>${index+1}</span><button type="button" data-image-right ${index===images.length-1?'disabled':''} aria-label="Pomakni desno">→</button></div></div></article>`).join('');
 }
 
 /** Prikazuje rezervacije odabranog statusa. @returns {void} */
@@ -234,7 +239,7 @@ async function readImages(files) { return Promise.all([...files].slice(0,5).map(
 function createImagePreviews(files){return[...files].slice(0,5).map((file)=>URL.createObjectURL(file));}
 
 /** Oslobađa privremene preview URL-ove forme proizvoda. @param {HTMLFormElement} form Forma. @returns {void} */
-function releaseImagePreviews(form){try{JSON.parse(form.dataset.newImages||'[]').filter((url)=>String(url).startsWith('blob:')).forEach((url)=>URL.revokeObjectURL(url));}catch{}form.dataset.newImages='[]';}
+function releaseImagePreviews(form){(form.imageItems||[]).forEach((image)=>{if(String(image.previewUrl||'').startsWith('blob:'))URL.revokeObjectURL(image.previewUrl);});form.imageItems=[];form.deletedImageIds=[];}
 
 /** Zaključuje narudžbu, ažurira zalihu i financije. @param {Object} order Narudžba. @returns {Promise<void>} */
 async function closeOrder(order) {
@@ -263,21 +268,31 @@ function bindNavigation() {
 function bindProducts() {
   document.querySelector('[data-product-search]').addEventListener('input',renderProducts); document.querySelector('[data-product-status]').addEventListener('change',renderProducts);
   document.querySelector('[data-products-list]').addEventListener('click',async(event)=>{const row=event.target.closest('[data-admin-product]');if(!row)return;const id=row.dataset.adminProduct,product=products.find(p=>String(p.id)===String(id));if(!product)return;if(event.target.closest('[data-stock]')){await adjustProductStock(id,Number(event.target.closest('[data-stock]').dataset.stock));await refreshAll();}if(event.target.closest('[data-edit-product]'))openProductDialog(product);if(event.target.closest('[data-archive-product]')){const willArchive=!product.archived;await setProductArchived(id,willArchive);toast(willArchive?'Proizvod je arhiviran.':'Proizvod je vraćen.');await refreshAll();}if(event.target.closest('[data-delete-product]')&&confirm(`Trajno obrisati „${product.name}”?`)){await deleteProduct(id);toast('Proizvod je obrisan.');await refreshAll();}});
-  const form=document.querySelector('[data-product-form]'); form.elements.images.addEventListener('change',()=>{releaseImagePreviews(form);const urls=createImagePreviews(form.elements.images.files);form.dataset.newImages=JSON.stringify(urls);form.dataset.mainImage='0';renderImagePreview(urls);});
+  const form=document.querySelector('[data-product-form]');
+  const replaceInput=document.createElement('input');replaceInput.type='file';replaceInput.accept='image/*';replaceInput.hidden=true;form.append(replaceInput);
+  form.elements.images.addEventListener('change',()=>{const remaining=Math.max(0,5-(form.imageItems||[]).length),files=[...form.elements.images.files].slice(0,remaining);if(!remaining){toast('Proizvod može imati najviše 5 slika.');form.elements.images.value='';return;}if(form.elements.images.files.length>remaining)toast(`Dodano je ${remaining} slika; proizvod može imati najviše 5.`);for(const file of files)(form.imageItems||=[]).push({kind:'new',key:crypto.randomUUID(),file,previewUrl:URL.createObjectURL(file),isMain:false});if(form.imageItems.length&&!form.imageItems.some((image)=>image.isMain))form.imageItems[0].isMain=true;form.elements.images.value='';renderImagePreview(form);});
   document.querySelector('[data-product-dialog]').addEventListener('close',()=>releaseImagePreviews(form));
-  document.querySelector('[data-image-preview]').addEventListener('click',(event)=>{const button=event.target.closest('[data-main-image]');if(!button)return;form.dataset.mainImage=button.dataset.mainImage;renderImagePreview(JSON.parse(form.dataset.newImages||'[]').length?JSON.parse(form.dataset.newImages):JSON.parse(form.dataset.existingImages||'[]'));});
+  document.querySelector('[data-image-preview]').addEventListener('click',(event)=>{const card=event.target.closest('[data-image-key]');if(!card)return;const items=form.imageItems||[],index=items.findIndex((image)=>String(image.id??image.key)===card.dataset.imageKey);if(index<0)return;if(event.target.closest('[data-image-main]'))items.forEach((image,itemIndex)=>image.isMain=itemIndex===index);if(event.target.closest('[data-image-delete]')){const[removed]=items.splice(index,1);if(removed.kind==='existing')form.deletedImageIds.push(removed.id);if(String(removed.previewUrl||'').startsWith('blob:'))URL.revokeObjectURL(removed.previewUrl);if(removed.isMain&&items[0])items[0].isMain=true;}if(event.target.closest('[data-image-replace]')){form.replaceImageIndex=index;replaceInput.value='';replaceInput.click();return;}if(event.target.closest('[data-image-left]')&&index>0)[items[index-1],items[index]]=[items[index],items[index-1]];if(event.target.closest('[data-image-right]')&&index<items.length-1)[items[index+1],items[index]]=[items[index],items[index+1]];renderImagePreview(form);});
+  replaceInput.addEventListener('change',()=>{const file=replaceInput.files[0],item=(form.imageItems||[])[form.replaceImageIndex];if(!file||!item)return;if(String(item.previewUrl||'').startsWith('blob:'))URL.revokeObjectURL(item.previewUrl);item.previewUrl=URL.createObjectURL(file);if(item.kind==='new')item.file=file;else item.replacementFile=file;renderImagePreview(form);});
+  const preview=document.querySelector('[data-image-preview]');preview.addEventListener('dragstart',(event)=>{const card=event.target.closest('[data-image-key]');if(card)event.dataTransfer.setData('text/plain',card.dataset.imageKey);});preview.addEventListener('dragover',(event)=>{if(event.target.closest('[data-image-key]'))event.preventDefault();});preview.addEventListener('drop',(event)=>{const target=event.target.closest('[data-image-key]');if(!target)return;event.preventDefault();const key=event.dataTransfer.getData('text/plain'),items=form.imageItems||[],from=items.findIndex((image)=>String(image.id??image.key)===key),to=items.findIndex((image)=>String(image.id??image.key)===target.dataset.imageKey);if(from<0||to<0||from===to)return;const[moved]=items.splice(from,1);items.splice(to,0,moved);renderImagePreview(form);});
   form.addEventListener('submit',async(event)=>{
     event.preventDefault();
     const submitButton=form.querySelector('[type="submit"]');
     submitButton.disabled=true;
     try {
-      const data=new FormData(form),existing=products.find(p=>String(p.id)===String(data.get('id'))),mainIndex=Number(form.dataset.mainImage||0),images=(existing?.images||[]).filter((url)=>!/^(data:image\/|blob:)/i.test(url)),regularPrice=Number(data.get('price')),promoPrice=data.get('oldPrice')?Number(data.get('oldPrice')):null;
+      const data=new FormData(form),existing=products.find(p=>String(p.id)===String(data.get('id'))),images=(existing?.images||[]).filter((url)=>!/^(data:image\/|blob:)/i.test(url)),regularPrice=Number(data.get('price')),promoPrice=data.get('oldPrice')?Number(data.get('oldPrice')):null;
       const persisted=await saveProduct({id:data.get('id')||undefined,name:data.get('name').trim(),club:data.get('club').trim(),player:data.get('player').trim(),type:data.get('type'),version:data.get('version'),sizes:data.get('sizes').split(',').map(x=>x.trim()).filter(Boolean),costPrice:Number(data.get('costPrice')),price:promoPrice||regularPrice,oldPrice:promoPrice?regularPrice:null,stock:Number(data.get('stock')),badge:data.get('badge'),labels:[data.get('badge')],description:data.get('description').trim(),images,createdAt:existing?.createdAt||new Date().toISOString()});
       if(!persisted?.id)throw new Error('Proizvod nije spremljen u bazu.');
       let imageWarning=false;
       try {
-        if(form.elements.images.files.length){const uploaded=await uploadProductImages(persisted.id,form.elements.images.files);if(uploaded[mainIndex])await setMainProductImage(persisted.id,uploaded[mainIndex].id);}
-        else if(mainIndex>0){const storedImages=await getProductImages(persisted.id);if(storedImages[mainIndex])await setMainProductImage(persisted.id,storedImages[mainIndex].id);}
+        for(const imageId of form.deletedImageIds||[])await deleteProductImage(persisted.id,imageId);
+        for(const image of (form.imageItems||[]).filter((item)=>item.kind==='existing'&&item.replacementFile))await replaceProductImage(persisted.id,image.id,image.replacementFile);
+        const newItems=(form.imageItems||[]).filter((item)=>item.kind==='new'),uploaded=await uploadProductImages(persisted.id,newItems.map((item)=>item.file));
+        newItems.forEach((item,index)=>{item.id=uploaded[index]?.id;item.kind='existing';});
+        const ordered=(form.imageItems||[]).map((item)=>item.id).filter(Boolean);
+        if(ordered.length)await reorderProductImages(persisted.id,ordered);
+        const main=(form.imageItems||[]).find((item)=>item.isMain&&item.id)||(form.imageItems||[]).find((item)=>item.id);
+        if(main)await setMainProductImage(persisted.id,main.id);
       } catch(error) {
         imageWarning=true;
         console.error('[DresHub Admin] Proizvod je spremljen, ali spremanje slika nije uspjelo.',error);

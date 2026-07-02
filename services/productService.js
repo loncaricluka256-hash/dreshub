@@ -36,7 +36,7 @@ function fromDatabase(row) {
   const imageRows = [...(row.product_images || [])].sort((a, b) => Number(a.image_order??0)-Number(b.image_order??0));
   const relatedUrls=imageRows.map((image)=>image.image_url).filter(Boolean),databaseMainIsValid=Boolean(row.main_image_url&&(!relatedUrls.length||relatedUrls.includes(row.main_image_url)));
   const relatedMain=imageRows.find((image)=>image.is_main)?.image_url,mainImageUrl=(databaseMainIsValid?row.main_image_url:null)||relatedMain||imageRows[0]?.image_url||row.main_image_url||null;
-  const images=[mainImageUrl,...imageRows.map((image)=>image.image_url)].filter((url,index,list)=>url&&list.indexOf(url)===index);
+  const orderedImages=imageRows.map((image)=>image.image_url).filter(Boolean),images=(orderedImages.length?orderedImages:[mainImageUrl]).filter((url,index,list)=>url&&list.indexOf(url)===index);
   const isOnSale=Boolean(row.is_on_sale&&row.sale_price!=null),badge=row.is_new?'NOVO':row.is_popular?'POPULARNO':isOnSale?'AKCIJA':Number(row.quantity)===1?'ZADNJI KOMAD':'';
   const sizes=Array.isArray(row.size)?row.size:String(row.size||'').split(',').map((value)=>value.trim()).filter(Boolean);
   return { id:row.id,name:row.name,club:row.club,player:row.player,type:row.category,version:row.version,sizes,costPrice:Number(row.buy_price||0),price:Number(isOnSale?row.sale_price:row.sell_price||0),oldPrice:isOnSale?Number(row.sell_price||0):null,stock:Number(row.quantity||0),description:row.description||'',status:row.status,badge,labels:[badge].filter(Boolean),createdAt:row.created_at,updatedAt:row.updated_at,mainImageUrl,isOnSale,images,archived:Boolean(row.is_archived) };
