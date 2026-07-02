@@ -1,5 +1,5 @@
 import { readStorage, writeStorage } from '../js/storage.js';
-import { getProductById, decrementProductQuantity, incrementProductQuantity } from './productService.js';
+import { getProductById, getProductMainImage, decrementProductQuantity, incrementProductQuantity } from './productService.js';
 import { createTransaction } from './transactionService.js';
 import { createChangeHistoryEntry } from './changeHistoryService.js';
 import { getSettings } from './settingsService.js';
@@ -48,7 +48,7 @@ export async function createReservation(reservationData) {
     const productId=String(requested.productId||''),product = await getProductById(productId), quantity = Math.max(1, Number(requested.quantity || 1));
     if (!product || product.stock < quantity) continue;
     const reserved = await decrementProductQuantity(product.id, quantity);
-    if (reserved) items.push({ productId: product.id, name: product.name, image: product.images[0], size: requested.size || product.sizes[0], quantity, price: product.price });
+    if (reserved) items.push({ productId: product.id, name: product.name, image: getProductMainImage(product), size: requested.size || product.sizes[0], quantity, price: product.price });
   }
   if (!items.length) throw new Error('Odabrani proizvod više nije dostupan.');
   const record = { name: reservationData.name, phone: reservationData.phone, note: reservationData.note || '', items, status: 'active', contacted: false, createdAt: createdAt.toISOString(), expiresAt: expiresAt.toISOString() };

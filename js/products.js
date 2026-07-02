@@ -25,22 +25,24 @@ export function getStockStatus(product) {
  */
 export function createProductCard(product) {
   const status = getStockStatus(product);
+  const isJersey=product.productType==='jersey',conditionLabels={new:'Novo',worn:'Nošeno',very_good:'Vrlo dobro',damaged:'Oštećeno'};
   const favorite = isFavorite(product.id);
   const template = document.getElementById('product-card-template');
   if (!template) throw new Error('Predložak kartice proizvoda nije učitan.');
   const values = {
     id: product.id,
-    badgeClass: `badge-${product.badge.toLowerCase().replaceAll(' ', '-').replace(/[^a-z0-9-]/g, '')}`,
-    badge: escapeHTML(product.badge),
+    badgeClass: `badge-${String(product.badge||product.productType).toLowerCase().replaceAll(' ', '-').replace(/[^a-z0-9-]/g, '')}`,
+    badge: escapeHTML(product.badge||(product.productType==='sneaker'?'TENISICE':'DUKS')),
     favoriteClass: favorite ? 'active' : '',
     favoriteLabel: favorite ? 'Ukloni iz omiljenih' : 'Dodaj u omiljene',
     favoritePressed: favorite,
     favoriteIcon: favorite ? '♥' : '♡',
     image: escapeHTML(getProductMainImage(product)),
     name: escapeHTML(product.name),
-    club: escapeHTML(product.club),
-    player: escapeHTML(product.player),
-    version: escapeHTML(product.version),
+    club: escapeHTML(isJersey?product.club:product.brand),
+    player: escapeHTML(isJersey?product.player:product.color),
+    version: escapeHTML(isJersey?product.version:conditionLabels[product.condition]||product.condition),
+    metaLabel1:isJersey?'Igrač':'Boja',metaLabel2:isJersey?'Verzija':'Stanje',metaLabel3:isJersey?'Veličine':'Veličina',
     sizes: escapeHTML(product.sizes.join(', ')),
     stockClass: status.className,
     stockLabel: status.label,

@@ -1,5 +1,5 @@
 import { initComponents } from './components.js';
-import { getProductById, getProductMainImage, getProducts, subscribeToProductChanges } from '../services/productService.js';
+import { getProductById, getProductMainImage, getProducts, getProductsByType, subscribeToProductChanges } from '../services/productService.js';
 import { addToCart } from '../services/cartService.js';
 import { isFavorite, toggleFavorite } from '../services/favoritesService.js';
 import { addRecentlyViewed } from './recentlyViewed.js';
@@ -17,6 +17,7 @@ import { formatPrice, showToast } from './utils.js';
 function renderProduct(product, products) {
   const root = document.querySelector('[data-product-detail]');
   const gallery=product.images?.length?product.images:[getProductMainImage(product)];
+  const mainIndex=Math.max(0,gallery.indexOf(getProductMainImage(product))),isJersey=product.productType==='jersey';
   const status = getStockStatus(product);
   const favorite = isFavorite(product.id);
   root.innerHTML = `
@@ -26,19 +27,20 @@ function renderProduct(product, products) {
         <span>⌕ Povećaj</span>
       </button>
       <div class="thumbnail-list">
-        ${gallery.map((image, index) => `<button class="thumbnail ${index === 0 ? 'active' : ''}" type="button" data-thumbnail="${index}"><img src="${image}" alt="${product.name}, slika ${index + 1}"></button>`).join('')}
+        ${gallery.map((image, index) => `<button class="thumbnail ${index === mainIndex ? 'active' : ''}" type="button" data-thumbnail="${index}"><img src="${image}" alt="${product.name}, slika ${index + 1}"></button>`).join('')}
       </div>
     </section>
     <section class="product-info">
-      <p class="eyebrow">${product.type === 'club' ? 'Klupski dres' : 'Reprezentacija'}</p>
+      <p class="eyebrow">${isJersey?(product.type === 'club' ? 'Klupski dres' : 'Reprezentacija'):product.productType==='sneaker'?'Tenisice':'Duks'}</p>
       <h1>${product.name}</h1>
       <p class="product-lead">${product.description}</p>
-      <dl class="detail-list">
+      <dl class="detail-list" ${isJersey?'':'hidden'}>
         <div><dt>Klub / reprezentacija</dt><dd>${product.club}</dd></div>
         <div><dt>Igrač</dt><dd>${product.player}</dd></div>
         <div><dt>Verzija</dt><dd>${product.version}</dd></div>
         <div><dt>Dostupne veličine</dt><dd>${product.sizes.join(', ')}</dd></div>
       </dl>
+      ${isJersey?'':`<dl class="detail-list"><div><dt>Brend</dt><dd>${product.brand}</dd></div><div><dt>Stanje</dt><dd>${({new:'Novo',worn:'Nošeno',very_good:'Vrlo dobro',damaged:'Oštećeno'})[product.condition]||product.condition}</dd></div><div><dt>Boja</dt><dd>${product.color}</dd></div><div><dt>Veličina</dt><dd>${product.sizes.join(', ')}</dd></div><div><dt>Kategorija</dt><dd>${({men:'Muški',women:'Ženski',unisex:'Unisex'})[product.genderCategory]||product.genderCategory}</dd></div>${product.productType==='sneaker'?`<div><dt>Originalna kutija</dt><dd>${product.hasOriginalBox?'Da':'Ne'}</dd></div>`:''}</dl>`}
       <div class="stock-status ${status.className}"><span></span>${status.label}</div>
       <div class="detail-price">${product.oldPrice ? `<del>${formatPrice(product.oldPrice)}</del>` : ''}<strong>${formatPrice(product.price)}</strong></div>
       <div class="product-actions">
@@ -49,7 +51,7 @@ function renderProduct(product, products) {
       <p class="purchase-note">Sigurna rezervacija bez plaćanja unaprijed. Javit ćemo vam se radi potvrde.</p>
     </section>`;
 
-  const similar = products.filter((item) => item.id !== product.id && (item.club === product.club || item.type === product.type)).slice(0, 4);
+  const similar = products.filter((item) => item.id !== product.id && (isJersey?(item.club === product.club || item.type === product.type):item.productType===product.productType)).slice(0, 4);
   document.querySelector('[data-similar-grid]').innerHTML = similar.map(createProductCard).join('');
 
   root.querySelectorAll('[data-thumbnail]').forEach((button) => button.addEventListener('click', () => {
@@ -95,7 +97,7 @@ async function init() {
   initReservationModal();
   initLightbox();
   const id = new URLSearchParams(location.search).get('id');
-  const [product, products] = await Promise.all([getProductById(id), getProducts()]);
+  const product=await getProductById(id),products=product?.productType==='jersey'?await getProducts():await getProductsByType(product?.productType||[]);
   if (!product) {
     document.querySelector('[data-product-detail]').innerHTML = '<div class="empty-state"><h1>Proizvod nije pronađen</h1><a class="button button-primary" href="index.html">Povratak na dresove</a></div>';
     return;
@@ -103,7 +105,7 @@ async function init() {
   document.title = `${product.name} | DresHub`;
   addRecentlyViewed(product.id);
   renderProduct(product, products);
-  await subscribeToProductChanges((freshProducts)=>{const fresh=freshProducts.find((item)=>String(item.id)===String(product.id));if(!fresh)return;const status=getStockStatus(fresh),root=document.querySelector('[data-product-detail]'),statusElement=root.querySelector('.stock-status');if(statusElement){statusElement.className=`stock-status ${status.className}`;statusElement.innerHTML=`<span></span>${status.label}`;}root.querySelector('[data-reserve-detail]').disabled=fresh.stock<1;root.querySelector('[data-cart-detail]').disabled=fresh.stock<1;});
+  await subscribeToProductChanges((freshProducts)=>{const fresh=freshProducts.find((item)=>String(item.id)===String(product.id));if(!fresh)return;const status=getStockStatus(fresh),root=document.querySelector('[data-product-detail]'),statusElement=root.querySelector('.stock-status');if(statusElement){statusElement.className=`stock-status ${status.className}`;statusElement.innerHTML=`<span></span>${status.label}`;}root.querySelector('[data-reserve-detail]').disabled=fresh.stock<1;root.querySelector('[data-cart-detail]').disabled=fresh.stock<1;},product.productType==='jersey'?'jersey':[product.productType]);
 }
 
 init();

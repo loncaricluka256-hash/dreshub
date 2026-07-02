@@ -25,6 +25,9 @@
 }
 
 @media (max-width: 640px) {
+  .other-products-promo { padding:22px 18px; grid-template-columns:1fr; gap:20px; }
+  .other-promo-product { grid-template-columns:96px minmax(0,1fr); }
+  .other-promo-product img { width:96px; height:108px; }
   .modal { width: calc(100vw - 32px); max-width: calc(100vw - 32px); max-height: 90dvh; }
   .modal-card { width: 100%; max-width: 100%; max-height: 90dvh; padding: 22px 18px; overflow-x: hidden; overflow-y: auto; }
   .notice { min-height: 31px; padding-inline: 16px; justify-content: center; text-align: center; font-size: .56rem; }

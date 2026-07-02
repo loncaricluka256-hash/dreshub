@@ -1,4 +1,4 @@
-import { getAllProducts, getProductById, getProductMainImage, saveProducts } from '../services/productService.js';
+import { getAllProducts, getProductById, getProductMainImage, saveProducts, duplicateSneakerProduct, duplicateJerseyProduct } from '../services/productService.js';
 import {
   initializeAdminData, refreshAdminCollections, getCollection, saveCollection, recordChange, saveProduct, adjustProductStock,
   setProductArchived, deleteProduct, updateReservation, getAdminSettings, saveAdminSettings, exportAllData
@@ -12,6 +12,7 @@ import { getAdminPassword } from '../services/settingsService.js';
 import { formatPrice, escapeHTML } from './utils.js';
 
 const viewNames = {
+  otherProducts: 'Tenisice i duksevi',
   dashboard: 'Dashboard', products: 'Proizvodi', reservations: 'Rezervacije', orders: 'Narudžbe',
   finance: 'Financije', notes: 'Bilješke', changes: 'Povijest promjena', transactions: 'Povijest transakcija', settings: 'Postavke'
 };
@@ -72,7 +73,7 @@ function metricCard(title, value, icon, hint = '', className = '') {
 async function refreshAll() {
   await refreshAdminCollections();
   products = await getAllProducts();
-  renderDashboard(); renderProducts(); renderReservations(); renderOrders(); renderFinance(); renderNotes(); renderChanges(); renderTransactions(); renderSettingsOptions();
+  renderDashboard(); renderProducts(); renderOtherProducts(); renderReservations(); renderOrders(); renderFinance(); renderNotes(); renderChanges(); renderTransactions(); renderSettingsOptions();
   document.querySelectorAll('[data-active-reservations]').forEach((element) => element.textContent = getReservations().filter((item) => item.status === 'active').length);
 }
 
@@ -114,21 +115,45 @@ function statusLabel(status) { return ({ active:'Aktivna', completed:'Završena'
 function renderProducts() {
   const query = (document.querySelector('[data-product-search]')?.value || '').toLocaleLowerCase('hr');
   const status = document.querySelector('[data-product-status]')?.value || 'active';
-  const filtered = products.filter((product) => (status === 'all' || (status === 'archived') === Boolean(product.archived)) && `${product.name} ${product.club} ${product.player}`.toLocaleLowerCase('hr').includes(query));
+  const filtered = products.filter((product) => product.productType === 'jersey' && (status === 'all' || (status === 'archived') === Boolean(product.archived)) && `${product.name} ${product.club} ${product.player}`.toLocaleLowerCase('hr').includes(query));
   document.querySelector('[data-products-summary]').textContent = `${filtered.length} proizvoda · ${filtered.reduce((sum,item)=>sum+item.stock,0)} komada`;
   document.querySelector('[data-products-list]').innerHTML = filtered.map((product) => `<article class="admin-product" data-admin-product="${escapeHTML(product.id)}"><img src="${escapeHTML(getProductMainImage(product))}" alt="${escapeHTML(product.name)}"><div class="admin-product-info"><strong>${escapeHTML(product.name)}</strong><small>${escapeHTML(product.club)} · ${escapeHTML(product.player)} · ${escapeHTML(product.version)}</small></div><span class="product-tag">${escapeHTML(product.badge)}</span><div class="stock-stepper"><button data-stock="-1" aria-label="Smanji">−</button><output>${product.stock}</output><button data-stock="1" aria-label="Povećaj">+</button></div><div class="admin-product-price"><strong>${formatPrice(product.price)}</strong><small>Nabava ${formatPrice(product.costPrice || 0)}</small></div><div class="row-actions"><button data-edit-product title="Uredi">✎</button><button data-archive-product title="${product.archived?'Vrati':'Arhiviraj'}">${product.archived?'↥':'▣'}</button><button class="danger" data-delete-product title="Obriši">×</button></div></article>`).join('') || emptyAdmin('Nema proizvoda za odabrani prikaz.');
 }
 
 /** Otvara formu proizvoda. @param {Object|null} product Postojeći proizvod. @returns {void} */
-async function openProductDialog(product = null) {
+function setupOtherProductsAdminUI(){
+  const dresList=document.querySelector('[data-products-list]'),addDuplicateButtons=()=>dresList?.querySelectorAll('[data-admin-product] .row-actions').forEach((actions)=>{if(!actions.querySelector('[data-duplicate-product]'))actions.insertAdjacentHTML('afterbegin','<button data-duplicate-product title="Dupliciraj dres">⧉</button>');});if(dresList)new MutationObserver(addDuplicateButtons).observe(dresList,{childList:true});
+  const productNav=document.querySelector('[data-view-target="products"]');
+  if(productNav&&!document.querySelector('[data-view-target="otherProducts"]'))productNav.insertAdjacentHTML('afterend','<button data-view-target="otherProducts"><span>◆</span>Tenisice i duksevi</button>');
+  const productView=document.querySelector('[data-view="products"]');
+  if(productView){productView.querySelector('h1').textContent='Dresovi';const addButton=productView.querySelector('[data-open-product]');if(addButton)addButton.textContent='+ Dodaj dres';}
+  if(productView&&!document.querySelector('[data-view="otherProducts"]'))productView.insertAdjacentHTML('afterend','<section class="admin-view" data-view="otherProducts"><header class="view-header"><div><p class="eyebrow">Ostali proizvodi</p><h1>Tenisice i duksevi</h1><p>Odvojeno upravljanje ponudom izvan kataloga dresova.</p></div><div class="other-product-create"><button class="admin-primary-action" data-open-other="sneaker">+ Dodaj tenisice</button><button class="admin-secondary-action" data-open-other="hoodie">+ Dodaj duks</button><button class="admin-secondary-action" data-prefill-nike>Pripremi Nike primjer</button></div></header><div class="admin-toolbar"><label class="admin-search">⌕<input type="search" data-other-product-search placeholder="Pretraži naziv, brend ili boju…"></label><select data-other-product-type><option value="all">Tenisice i duksevi</option><option value="sneaker">Tenisice</option><option value="hoodie">Duksevi</option></select><span data-other-products-summary></span></div><div class="product-admin-list" data-other-products-list></div></section>');
+  const form=document.querySelector('[data-product-form]'),imageLabel=form?.elements.images?.closest('label');
+  if(form&&imageLabel&&!form.elements.productType)imageLabel.insertAdjacentHTML('beforebegin','<input type="hidden" name="productType" value="jersey"><label class="other-product-field">Brend<input name="brand"></label><label class="other-product-field">Boja<input name="color"></label><label class="other-product-field">Stanje<select name="condition"><option value="new">Novo</option><option value="worn">Nošeno</option><option value="very_good">Vrlo dobro</option><option value="damaged">Oštećeno</option></select></label><label class="other-product-field">Spol / kategorija<select name="genderCategory"><option value="men">Muški</option><option value="women">Ženski</option><option value="unisex">Unisex</option></select></label><label class="other-product-field sneaker-only checkbox-field"><input type="checkbox" name="hasOriginalBox"> Originalna kutija</label>');
+}
+
+function renderOtherProducts(){const list=document.querySelector('[data-other-products-list]');if(!list)return;const query=(document.querySelector('[data-other-product-search]')?.value||'').toLocaleLowerCase('hr'),type=document.querySelector('[data-other-product-type]')?.value||'all',items=products.filter((product)=>['sneaker','hoodie'].includes(product.productType)&&(type==='all'||product.productType===type)&&`${product.name} ${product.brand} ${product.color}`.toLocaleLowerCase('hr').includes(query));document.querySelector('[data-other-products-summary]').textContent=`${items.length} proizvoda`;list.innerHTML=items.map((product)=>`<article class="admin-product" data-other-product="${escapeHTML(product.id)}"><img src="${escapeHTML(getProductMainImage(product))}" alt="${escapeHTML(product.name)}"><div class="admin-product-info"><strong>${escapeHTML(product.name)}</strong><small>${product.productType==='sneaker'?'Tenisice':'Duks'} · ${escapeHTML(product.brand)} · ${escapeHTML(product.sizes.join(', '))}</small></div><span class="product-tag">${product.productType==='sneaker'?'TENISICE':'DUKS'}</span><div class="stock-stepper"><output>${product.stock}</output></div><div class="admin-product-price"><strong>${formatPrice(product.price)}</strong></div><div class="row-actions">${product.productType==='sneaker'?'<button data-duplicate-other title="Dupliciraj">⧉</button>':''}<button data-edit-other title="Uredi">✎</button><button class="danger" data-delete-other title="Obriši">×</button></div></article>`).join('')||emptyAdmin('Nema tenisica ili dukseva za odabrani prikaz.');}
+
+async function removeOtherProduct(product){const images=await getProductImages(product.id);for(const image of images)await deleteProductImage(product.id,image.id);await deleteProduct(product.id);}
+
+async function prefillNikeExample(){await openProductDialog(null,'sneaker');const form=document.querySelector('[data-product-form]');form.elements.name.value='Nike Air Force 1';form.elements.brand.value='Nike';form.elements.sizes.value='44';form.elements.costPrice.value='50';form.elements.price.value='80';form.elements.stock.value='3';form.elements.color.value='bijela';form.elements.condition.value='new';form.elements.genderCategory.value='unisex';form.elements.hasOriginalBox.checked=false;form.elements.description.value='Nove bijele Nike Air Force 1 tenisice.';toast('Podaci su pripremljeni. Dodajte priložene fotografije kroz polje Slike i spremite oglas.');}
+
+async function openProductDialog(product = null, requestedType = 'jersey') {
   const dialog = document.querySelector('[data-product-dialog]');
   const form = dialog.querySelector('form');
   releaseImagePreviews(form); form.reset(); form.elements.id.value = product?.id || '';
-  dialog.querySelector('[data-product-dialog-title]').textContent = product ? 'Uredi proizvod' : 'Novi proizvod';
+  const productType=product?.productType||requestedType;form.elements.productType.value=productType;
+  form.elements.sizes.placeholder=productType==='sneaker'?'npr. 42.5':productType==='hoodie'?'XS, S, M, L, XL ili XXL':'S, M, L';
+  const isJersey=productType==='jersey';
+  ['club','player','version'].forEach((name)=>{const field=form.elements[name],label=field?.closest('label');if(label)label.hidden=!isJersey;if(field){field.required=isJersey;if(!isJersey)field.value='';}});
+  form.querySelectorAll('.other-product-field').forEach((field)=>field.hidden=isJersey||field.classList.contains('sneaker-only')&&productType!=='sneaker');
+  ['brand','color','condition','genderCategory'].forEach((name)=>{if(form.elements[name])form.elements[name].required=!isJersey;});
+  dialog.querySelector('[data-product-dialog-title]').textContent = product ? `Uredi ${productType==='sneaker'?'tenisice':productType==='hoodie'?'duks':'proizvod'}` : productType==='sneaker'?'Nove tenisice':productType==='hoodie'?'Novi duks':'Novi proizvod';
   if (product) ['name','club','player','type','version','costPrice','stock','badge','description'].forEach((key) => { if(form.elements[key]) form.elements[key].value = product[key] ?? ''; });
   form.elements.price.value = product ? (product.oldPrice || product.price) : '';
   form.elements.oldPrice.value = product?.oldPrice ? product.price : '';
   form.elements.sizes.value = product?.sizes?.join(', ') || '';
+  if(!isJersey){form.elements.brand.value=product?.brand||'';form.elements.color.value=product?.color||'';form.elements.condition.value=product?.condition||'new';form.elements.genderCategory.value=product?.genderCategory||'unisex';form.elements.hasOriginalBox.checked=Boolean(product?.hasOriginalBox);form.elements.costPrice.value=product?.costPrice||0;form.elements.badge.value=product?.badge||'NOVO';}
   form.imageItems = [];
   form.deletedImageIds = [];
   if (product?.id) {
@@ -267,7 +292,12 @@ function bindNavigation() {
 /** Povezuje CRUD akcije proizvoda. @returns {void} */
 function bindProducts() {
   document.querySelector('[data-product-search]').addEventListener('input',renderProducts); document.querySelector('[data-product-status]').addEventListener('change',renderProducts);
+  document.querySelector('[data-other-product-search]')?.addEventListener('input',renderOtherProducts);document.querySelector('[data-other-product-type]')?.addEventListener('change',renderOtherProducts);
+  document.querySelectorAll('[data-open-other]').forEach((button)=>button.addEventListener('click',()=>openProductDialog(null,button.dataset.openOther)));
+  document.querySelector('[data-prefill-nike]')?.addEventListener('click',prefillNikeExample);
+  document.querySelector('[data-other-products-list]')?.addEventListener('click',async(event)=>{const row=event.target.closest('[data-other-product]');if(!row)return;const product=products.find((item)=>String(item.id)===String(row.dataset.otherProduct));if(!product)return;if(event.target.closest('[data-edit-other]'))await openProductDialog(product,product.productType);if(event.target.closest('[data-delete-other]')&&confirm(`Trajno obrisati „${product.name}”?`)){await removeOtherProduct(product);toast('Proizvod je obrisan.');await refreshAll();}if(event.target.closest('[data-duplicate-other]')){try{const copy=await duplicateSneakerProduct(product.id);toast('Oglas i slike su duplicirani.');await refreshAll();await openProductDialog(copy,'sneaker');}catch(error){toast(`Dupliciranje nije uspjelo: ${error.message}`);}}});
   document.querySelector('[data-products-list]').addEventListener('click',async(event)=>{const row=event.target.closest('[data-admin-product]');if(!row)return;const id=row.dataset.adminProduct,product=products.find(p=>String(p.id)===String(id));if(!product)return;if(event.target.closest('[data-stock]')){await adjustProductStock(id,Number(event.target.closest('[data-stock]').dataset.stock));await refreshAll();}if(event.target.closest('[data-edit-product]'))openProductDialog(product);if(event.target.closest('[data-archive-product]')){const willArchive=!product.archived;await setProductArchived(id,willArchive);toast(willArchive?'Proizvod je arhiviran.':'Proizvod je vraćen.');await refreshAll();}if(event.target.closest('[data-delete-product]')&&confirm(`Trajno obrisati „${product.name}”?`)){await deleteProduct(id);toast('Proizvod je obrisan.');await refreshAll();}});
+  document.addEventListener('click',async(event)=>{const button=event.target.closest('[data-duplicate-product]');if(!button)return;const row=button.closest('[data-admin-product]'),product=products.find((item)=>String(item.id)===String(row?.dataset.adminProduct));if(!product)return;button.disabled=true;try{const copy=await duplicateJerseyProduct(product.id);toast('Dres i sve slike su duplicirani.');await refreshAll();await openProductDialog(copy,'jersey');}catch(error){console.error('[DresHub Admin] Dupliciranje dresa nije uspjelo.',error);toast(`Dupliciranje dresa nije uspjelo: ${error.message}`);}finally{button.disabled=false;}});
   const form=document.querySelector('[data-product-form]');
   const replaceInput=document.createElement('input');replaceInput.type='file';replaceInput.accept='image/*';replaceInput.hidden=true;form.append(replaceInput);
   form.elements.images.addEventListener('change',()=>{const remaining=Math.max(0,5-(form.imageItems||[]).length),files=[...form.elements.images.files].slice(0,remaining);if(!remaining){toast('Proizvod može imati najviše 5 slika.');form.elements.images.value='';return;}if(form.elements.images.files.length>remaining)toast(`Dodano je ${remaining} slika; proizvod može imati najviše 5.`);for(const file of files)(form.imageItems||=[]).push({kind:'new',key:crypto.randomUUID(),file,previewUrl:URL.createObjectURL(file),isMain:false});if(form.imageItems.length&&!form.imageItems.some((image)=>image.isMain))form.imageItems[0].isMain=true;form.elements.images.value='';renderImagePreview(form);});
@@ -281,7 +311,7 @@ function bindProducts() {
     submitButton.disabled=true;
     try {
       const data=new FormData(form),existing=products.find(p=>String(p.id)===String(data.get('id'))),images=(existing?.images||[]).filter((url)=>!/^(data:image\/|blob:)/i.test(url)),regularPrice=Number(data.get('price')),promoPrice=data.get('oldPrice')?Number(data.get('oldPrice')):null;
-      const persisted=await saveProduct({id:data.get('id')||undefined,name:data.get('name').trim(),club:data.get('club').trim(),player:data.get('player').trim(),type:data.get('type'),version:data.get('version'),sizes:data.get('sizes').split(',').map(x=>x.trim()).filter(Boolean),costPrice:Number(data.get('costPrice')),price:promoPrice||regularPrice,oldPrice:promoPrice?regularPrice:null,stock:Number(data.get('stock')),badge:data.get('badge'),labels:[data.get('badge')],description:data.get('description').trim(),images,createdAt:existing?.createdAt||new Date().toISOString()});
+      const productType=data.get('productType')||'jersey',sizes=data.get('sizes').split(',').map(x=>x.trim()).filter(Boolean);if(productType!=='jersey'&&sizes.length!==1)throw new Error('Za tenisice i dukseve unesite jednu veličinu po oglasu.');if(productType==='hoodie'&&!['XS','S','M','L','XL','XXL'].includes(sizes[0]?.toUpperCase()))throw new Error('Dopuštene veličine duksa su XS, S, M, L, XL i XXL.');if(productType==='sneaker'&&!/^\d{1,2}(\.5)?$/.test(sizes[0]||''))throw new Error('Veličina tenisica mora biti broj, primjerice 42 ili 42.5.');const persisted=await saveProduct({id:data.get('id')||undefined,productType,name:data.get('name').trim(),club:productType==='jersey'?data.get('club').trim():'',player:productType==='jersey'?data.get('player').trim():'',type:productType==='jersey'?data.get('type'):productType,version:productType==='jersey'?data.get('version'):'',brand:productType==='jersey'?'':data.get('brand').trim(),color:productType==='jersey'?'':data.get('color').trim(),condition:productType==='jersey'?'':data.get('condition'),genderCategory:productType==='jersey'?'':data.get('genderCategory'),hasOriginalBox:productType==='sneaker'&&data.get('hasOriginalBox')==='on',sizes,costPrice:Number(data.get('costPrice')),price:promoPrice||regularPrice,oldPrice:promoPrice?regularPrice:null,stock:Number(data.get('stock')),badge:data.get('badge'),labels:[data.get('badge')],description:data.get('description').trim(),images,createdAt:existing?.createdAt||new Date().toISOString()});
       if(!persisted?.id)throw new Error('Proizvod nije spremljen u bazu.');
       let imageWarning=false;
       try {
@@ -367,6 +397,7 @@ function bindSettings() {
 /** Pokreće admin aplikaciju nakon provjere prijave. @returns {Promise<void>} */
 async function startAdmin() {
   const login=document.querySelector('[data-admin-login]'),app=document.querySelector('[data-admin-app]');
+  setupOtherProductsAdminUI();
   bindNavigation();bindProducts();bindReservations();bindOrders();bindFinance();bindNotes();bindHistories();bindSettings();
   const showApp=()=>{login.hidden=true;app.hidden=false;showView(location.hash.slice(1) in viewNames?location.hash.slice(1):'dashboard');};
   const loadData=async()=>{

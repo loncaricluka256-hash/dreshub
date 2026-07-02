@@ -7,7 +7,10 @@ import { getRecentlyViewed } from './recentlyViewed.js';
 import { initReservationModal, openReservationModal } from './reservationModal.js';
 import { initLightbox } from './lightbox.js';
 import { showToast } from './utils.js';
-import { subscribeToProductChanges } from '../services/productService.js';
+import { subscribeToProductChanges, getProductsByType, getProductMainImage } from '../services/productService.js';
+import { formatPrice } from './utils.js';
+
+async function renderOtherProductsPromo(){const promo=document.querySelector('[data-other-products-promo]');if(!promo)return;try{const[first]=await getProductsByType('sneaker');if(!first)return;promo.querySelector('[data-other-promo-image]').src=getProductMainImage(first);promo.querySelector('[data-other-promo-image]').alt=first.name;promo.querySelector('[data-other-promo-name]').textContent=first.name;promo.querySelector('[data-other-promo-meta]').textContent=`${first.brand} · veličina ${first.sizes.join(', ')} · ${formatPrice(first.price)}`;}catch(error){console.warn('[DresHub Promo] Primjer tenisica trenutačno nije dostupan.',error);}}
 
 /**
  * Povezuje akcije kartica proizvoda koristeći delegaciju događaja.
@@ -53,11 +56,12 @@ async function init() {
     initReservationModal();
     initLightbox();
     const products = await loadProducts();
+    await renderOtherProductsPromo();
     renderProducts(products);
     const catalogFilters = initFilters(products, renderProducts);
     initProductActions();
     window.addEventListener('dreshub:reservation-created',async(event)=>{const fresh=(await loadProducts()).find((product)=>String(product.id)===String(event.detail?.productId));if(!fresh)return;document.querySelectorAll('[data-product-id]').forEach((card)=>{if(String(card.dataset.productId)===String(fresh.id))card.outerHTML=createProductCard(fresh);});});
-    await subscribeToProductChanges((freshProducts)=>{products.splice(0,products.length,...freshProducts);catalogFilters.rebuild();});
+    await subscribeToProductChanges((freshProducts)=>{products.splice(0,products.length,...freshProducts);catalogFilters.rebuild();void renderOtherProductsPromo();});
 
     const recentIds = getRecentlyViewed();
     const recentSection = document.querySelector('[data-recent-section]');

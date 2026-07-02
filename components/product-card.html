@@ -8,7 +8,7 @@
     <div class="card-content">
       <p class="card-club">{{club}}</p>
       <a href="product.html?id={{id}}"><h3>{{name}}</h3></a>
-      <dl class="product-meta"><div><dt>Igrač</dt><dd>{{player}}</dd></div><div><dt>Verzija</dt><dd>{{version}}</dd></div><div><dt>Veličine</dt><dd>{{sizes}}</dd></div></dl>
+      <dl class="product-meta"><div><dt>{{metaLabel1}}</dt><dd>{{player}}</dd></div><div><dt>{{metaLabel2}}</dt><dd>{{version}}</dd></div><div><dt>{{metaLabel3}}</dt><dd>{{sizes}}</dd></div></dl>
       <div class="stock-status {{stockClass}}"><span></span>{{stockLabel}}</div>
       <div class="card-footer"><div class="price-wrap">{{oldPrice}}<strong>{{price}}</strong></div><button class="button button-primary reserve-button" type="button" data-reserve="{{id}}" {{disabled}}>Rezerviraj</button></div>
     </div>
