@@ -88,7 +88,7 @@ export function initFilters(products, render) {
   arrangeFilters();
   input.addEventListener('input',()=>update(true));
   form.addEventListener('change',()=>update(false));
-  form.addEventListener('submit',(event)=>{event.preventDefault();update(false);deactivateMobileSearch();input.blur();if(matchMedia('(max-width: 640px)').matches)document.querySelector('[data-product-grid]')?.scrollIntoView({behavior:'smooth',block:'start'});});
+  form.addEventListener('submit',(event)=>{event.preventDefault();update(false);deactivateMobileSearch();input.blur();window.setTimeout(()=>{const resultsStart=document.querySelector('[data-product-count]')?.closest('.section-heading')||document.querySelector('[data-product-grid]');resultsStart?.scrollIntoView({behavior:'smooth',block:'start'});},matchMedia('(max-width: 640px)').matches?180:20);});
   form.addEventListener('reset', () => window.setTimeout(() => { setPanel(false); closeSuggestions();deactivateMobileSearch();update(); }));
   desktopToggle?.addEventListener('click', () => setPanel(!advanced?.classList.contains('open')));
   mobileToggle?.addEventListener('click', () => setPanel(true));
