@@ -35,7 +35,12 @@ export function initFilters(products, render) {
   const form = document.querySelector('[data-catalog-form]');
   if (!form) return { update() {}, rebuild() {} };
   const input = form.elements.query;
-  const suggestions = form.querySelector('[data-search-suggestions]');
+  const oldSearchIcon=input.closest('.search-field')?.querySelector(':scope > span[aria-hidden="true"]');
+  if(oldSearchIcon){const submit=document.createElement('button');submit.type='submit';submit.className='search-submit';submit.setAttribute('aria-label','Pokreni pretragu');submit.textContent='⌕';oldSearchIcon.replaceWith(submit);}
+  let suggestions = form.querySelector('[data-search-suggestions]');
+  if(!suggestions){suggestions=document.createElement('div');suggestions.className='search-suggestions';suggestions.dataset.searchSuggestions='';suggestions.setAttribute('role','listbox');suggestions.hidden=true;input.closest('.search-field')?.append(suggestions);}
+  let clearButton=form.querySelector('[data-clear-search]');
+  if(!clearButton){clearButton=document.createElement('button');clearButton.type='button';clearButton.className='clear-search';clearButton.dataset.clearSearch='';clearButton.textContent='Očisti';clearButton.hidden=true;input.closest('.search-field')?.append(clearButton);}
   const advanced = form.querySelector('[data-advanced-filters]');
   const primaryFilters = form.querySelector('.primary-filters');
   const filterPanel = form.querySelector('.filter-panel');
@@ -54,9 +59,10 @@ export function initFilters(products, render) {
     const items = getSearchSuggestions(searchIndex, input.value);
     suggestions.innerHTML = items.map((item) => `<button type="button" role="option" data-suggestion="${escapeAttribute(item.label)}"><span>${escapeHTML(item.label)}</span><small>${item.type}</small></button>`).join('');
     suggestions.hidden = !items.length;
+    clearButton.hidden=!input.value;
   };
-  const update = () => {
-    renderSuggestions();
+  const update = (showSuggestions = false) => {
+    if(showSuggestions)renderSuggestions();else{closeSuggestions();clearButton.hidden=!input.value;}
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => render(applyCatalogControls(products, form, searchIndex)));
   };
@@ -75,14 +81,16 @@ export function initFilters(products, render) {
   };
 
   arrangeFilters();
-  form.addEventListener('input', update);
-  form.addEventListener('change', update);
+  input.addEventListener('input',()=>update(true));
+  form.addEventListener('change',()=>update(false));
+  form.addEventListener('submit',(event)=>{event.preventDefault();update(false);input.blur();if(matchMedia('(max-width: 640px)').matches)document.querySelector('[data-product-grid]')?.scrollIntoView({behavior:'smooth',block:'start'});});
   form.addEventListener('reset', () => window.setTimeout(() => { setPanel(false); closeSuggestions(); update(); }));
   desktopToggle?.addEventListener('click', () => setPanel(!advanced?.classList.contains('open')));
   mobileToggle?.addEventListener('click', () => setPanel(true));
   closeButton?.addEventListener('click', () => setPanel(false));
   advanced?.addEventListener('click', (event) => { if (event.target === advanced) setPanel(false); });
-  suggestions?.addEventListener('click', (event) => { const button = event.target.closest('[data-suggestion]'); if (!button) return; input.value = button.dataset.suggestion; closeSuggestions(); update(); });
+  suggestions?.addEventListener('click', (event) => { const button = event.target.closest('[data-suggestion]'); if (!button) return; event.preventDefault();event.stopPropagation();input.value = button.dataset.suggestion;update(false);input.blur(); });
+  clearButton.addEventListener('click',()=>{input.value='';update(false);input.focus();});
   document.addEventListener('click', (event) => { if (!event.target.closest('.search-field')) closeSuggestions(); });
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') { closeSuggestions(); setPanel(false); } });
   window.addEventListener('resize', () => { arrangeFilters(); if (!matchMedia('(max-width: 640px)').matches) document.body.classList.remove('filters-open'); });

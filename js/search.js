@@ -1,127 +1,38 @@
-const LEAGUES = Object.freeze([
-  { name: 'Bundesliga', aliases: ['bundesliga', 'bundes liga'], clubs: ['Bayern München', 'Borussia Dortmund', 'Bayer Leverkusen', 'RB Leipzig', 'Eintracht Frankfurt', 'Stuttgart', 'Wolfsburg', 'Borussia Mönchengladbach', 'Freiburg', 'Hoffenheim', 'Werder Bremen', 'Mainz'] },
-  { name: 'La Liga', aliases: ['la liga', 'laliga', 'lalliga', 'primera liga', 'primiera liga'], clubs: ['Real Madrid', 'Barcelona', 'Atletico Madrid', 'Sevilla', 'Valencia', 'Villarreal', 'Real Sociedad', 'Athletic Bilbao', 'Real Betis', 'Girona', 'Celta Vigo'] },
-  { name: 'Premier liga', aliases: ['premier', 'premier liga', 'premier league'], clubs: ['Manchester United', 'Manchester City', 'Liverpool', 'Arsenal', 'Chelsea', 'Tottenham', 'Newcastle United', 'Aston Villa', 'West Ham', 'Brighton', 'Everton'] },
-  { name: 'Serie A', aliases: ['serie a', 'seria a'], clubs: ['Juventus', 'Inter', 'Milan', 'Napoli', 'Roma', 'Lazio', 'Atalanta', 'Fiorentina', 'Bologna', 'Torino'] },
-  { name: 'Ligue 1', aliases: ['ligue 1', 'liga 1'], clubs: ['PSG', 'Marseille', 'Monaco', 'Lyon', 'Lille', 'Nice', 'Lens', 'Rennes'] },
-  { name: 'Primeira Liga', aliases: ['primeira liga', 'portugalska liga'], clubs: ['Benfica', 'Porto', 'Sporting', 'Braga'] },
-  { name: 'Eredivisie', aliases: ['eredivisie', 'eredivizija'], clubs: ['Ajax', 'PSV', 'Feyenoord', 'AZ Alkmaar', 'Twente'] },
-  { name: 'Belgian Pro League', aliases: ['belgian pro league', 'belgijska liga'], clubs: ['Club Brugge', 'Anderlecht', 'Genk', 'Gent', 'Antwerp', 'Union SG'] },
-  { name: 'Saudijska Arabijska prva liga', aliases: ['saudijska liga', 'saudijska arabija', 'saudi pro league'], clubs: ['Al Nassr', 'Al Hilal', 'Al Ittihad', 'Al Ahli', 'Al Ettifaq'] },
-  { name: 'MLS', aliases: ['mls', 'major league soccer'], clubs: ['Inter Miami', 'LA Galaxy', 'LAFC', 'New York City FC', 'Atlanta United', 'Seattle Sounders'] },
-  { name: 'HNL', aliases: ['hnl', 'hrvatska liga'], clubs: ['Dinamo Zagreb', 'Hajduk Split', 'Rijeka', 'Osijek', 'Lokomotiva', 'Varaždin', 'Slaven Belupo', 'Istra 1961', 'Gorica', 'Šibenik'] }
+const SEARCH_GROUPS = Object.freeze([
+  { name:'Bundesliga',aliases:['bundesliga','bundes liga'],clubs:['Bayern München','Borussia Dortmund','Bayer Leverkusen','RB Leipzig','Eintracht Frankfurt','Stuttgart','Wolfsburg','Borussia Mönchengladbach','Freiburg','Hoffenheim','Werder Bremen','Mainz'] },
+  { name:'La Liga',aliases:['la liga','laliga','lalliga','primera liga','primiera liga'],clubs:['Real Madrid','Barcelona','Atletico Madrid','Sevilla','Valencia','Villarreal','Real Sociedad','Athletic Bilbao','Real Betis','Girona','Celta Vigo'] },
+  { name:'Premier liga',aliases:['premier','premier liga','premier league'],clubs:['Manchester United','Manchester City','Liverpool','Arsenal','Chelsea','Tottenham','Newcastle United','Aston Villa','West Ham','Brighton','Everton'] },
+  { name:'Serie A',aliases:['serie a','seria a'],clubs:['Juventus','Inter','Milan','Napoli','Roma','Lazio','Atalanta','Fiorentina','Bologna','Torino'] },
+  { name:'Ligue 1',aliases:['ligue 1','liga 1'],clubs:['PSG','Paris Saint-Germain','Marseille','Monaco','Lyon','Lille','Nice','Lens','Rennes'] },
+  { name:'Primeira Liga',aliases:['primeira liga','portugalska liga'],clubs:['Benfica','Porto','Sporting','Braga'] },
+  { name:'Eredivisie',aliases:['eredivisie','eredivizija'],clubs:['Ajax','PSV','Feyenoord','AZ Alkmaar','Twente'] },
+  { name:'Belgian Pro League',aliases:['belgian pro league','belgijska liga'],clubs:['Club Brugge','Anderlecht','Genk','Gent','Antwerp','Union SG'] },
+  { name:'Saudijska Arabijska prva liga',aliases:['saudijska liga','saudijska arabija','saudi pro league'],clubs:['Al Nassr','Al Hilal','Al Ittihad','Al Ahli','Al Ettifaq'] },
+  { name:'MLS',aliases:['mls','major league soccer'],clubs:['Inter Miami','LA Galaxy','LAFC','New York City FC','Atlanta United','Seattle Sounders'] },
+  { name:'HNL',aliases:['hnl','hrvatska liga'],clubs:['Dinamo Zagreb','Hajduk Split','Rijeka','Osijek','Lokomotiva','Varaždin','Slaven Belupo','Istra 1961','Gorica','Šibenik'] },
+  { name:'NBA',aliases:['nba','national basketball association'],clubs:['Atlanta Hawks','Boston Celtics','Brooklyn Nets','Charlotte Hornets','Chicago Bulls','Cleveland Cavaliers','Dallas Mavericks','Denver Nuggets','Detroit Pistons','Golden State Warriors','Houston Rockets','Indiana Pacers','LA Clippers','Los Angeles Lakers','Memphis Grizzlies','Miami Heat','Milwaukee Bucks','Minnesota Timberwolves','New Orleans Pelicans','New York Knicks','Oklahoma City Thunder','Orlando Magic','Philadelphia 76ers','Phoenix Suns','Portland Trail Blazers','Sacramento Kings','San Antonio Spurs','Toronto Raptors','Utah Jazz','Washington Wizards'] }
 ]);
 
-/** Normalizira tekst za pretragu neovisnu o dijakritici i interpunkciji. */
-export function normalizeSearchText(value) {
-  return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('hr').replace(/[^a-z0-9]+/g, ' ').trim();
-}
+/** Normalizira velika slova, dijakritiku, interpunkciju i višestruke razmake. */
+export function normalizeSearchText(value){return String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').toLocaleLowerCase('hr').replace(/[^a-z0-9]+/g,' ').trim();}
 
-const NORMALIZED_LEAGUES = LEAGUES.map((league) => ({
-  ...league,
-  normalizedName: normalizeSearchText(league.name),
-  normalizedAliases: league.aliases.map(normalizeSearchText),
-  normalizedClubs: league.clubs.map(normalizeSearchText)
-}));
-const ALL_NORMALIZED_CLUBS = NORMALIZED_LEAGUES.flatMap((league) => league.normalizedClubs.map((club) => ({ club, league })));
+const SYNONYMS=new Map(Object.entries({barca:'barcelona',hrva:'hrvatska',croatia:'hrvatska',madrit:'madrid',mancester:'manchester',mančester:'manchester',psg:'paris saint germain','inter majami':'inter miami',laliga:'la liga',lalliga:'la liga',premier:'premier league',lakers:'los angeles lakers',bulls:'chicago bulls',warriors:'golden state warriors',celtics:'boston celtics'}).map(([key,value])=>[normalizeSearchText(key),normalizeSearchText(value)]));
+const GROUPS=SEARCH_GROUPS.map((group)=>({...group,normalizedName:normalizeSearchText(group.name),normalizedAliases:group.aliases.map(normalizeSearchText),normalizedClubs:group.clubs.map(normalizeSearchText)}));
 
-function entryContainsClub(entry, club, league) {
-  const contains = entry.club === club || entry.club.includes(club) || entry.haystack.includes(club);
-  if (!contains) return false;
-  return !ALL_NORMALIZED_CLUBS.some((candidate) => candidate.league !== league && candidate.club !== club && candidate.club.includes(club) && entry.haystack.includes(candidate.club));
-}
+function editDistance(a,b){if(Math.abs(a.length-b.length)>2)return 3;const row=Array.from({length:b.length+1},(_,index)=>index);for(let i=1;i<=a.length;i+=1){let previous=row[0];row[0]=i;for(let j=1;j<=b.length;j+=1){const old=row[j];row[j]=Math.min(row[j]+1,row[j-1]+1,previous+(a[i-1]===b[j-1]?0:1));previous=old;}}return row[b.length];}
+function queryAlternatives(query){const normalized=normalizeSearchText(query),synonym=SYNONYMS.get(normalized);return[normalized,synonym].filter((value,index,list)=>value&&list.indexOf(value)===index);}
+function tokenMatches(token,words,haystack){if(haystack.includes(token))return true;if(token.length<4)return false;return words.some((word)=>word.startsWith(token)||token.startsWith(word)&&word.length>=4||editDistance(token,word)<=Math.min(2,Math.floor(token.length/4)));}
+function textMatches(entry,term){const tokens=term.split(' ').filter(Boolean);return tokens.every((token)=>tokenMatches(token,entry.words,entry.haystack));}
+function findGroup(query){const normalized=normalizeSearchText(query),exact=GROUPS.find((group)=>group.normalizedAliases.includes(normalized));if(exact)return exact;return GROUPS.find((group)=>normalized.length>=5&&group.normalizedAliases.some((alias)=>editDistance(alias,normalized)<=2))||null;}
+function entryBelongsToGroup(entry,group){return group.normalizedClubs.some((club)=>entry.club.includes(club)||entry.haystack.includes(club));}
 
-function editDistance(a, b) {
-  if (Math.abs(a.length - b.length) > 2) return 3;
-  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
-  for (let i = 1; i <= a.length; i += 1) {
-    let previous = row[0]; row[0] = i;
-    for (let j = 1; j <= b.length; j += 1) {
-      const old = row[j];
-      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, previous + (a[i - 1] === b[j - 1] ? 0 : 1));
-      previous = old;
-    }
-  }
-  return row[b.length];
-}
+/** Jednom priprema indeks svih postojećih polja proizvoda. */
+export function createProductSearchIndex(products){return products.map((product,order)=>{const sourceText=[product.name,product.description,product.season].filter(Boolean).join(' '),detectedSeason=product.season||sourceText.match(/\b(?:19|20)\d{2}(?:\s*[/-]\s*(?:\d{2}|(?:19|20)\d{2}))?\b/)?.[0]||'',fields=[product.name,product.club,product.player,product.description,product.version,product.type,product.category,detectedSeason,product.badge,...(product.labels||[])],haystack=normalizeSearchText(fields.filter(Boolean).join(' '));return{product:{...product,season:detectedSeason},order,name:normalizeSearchText(product.name),club:normalizeSearchText(product.club),player:normalizeSearchText(product.player),season:normalizeSearchText(detectedSeason),haystack,words:[...new Set(haystack.split(' ').filter(Boolean))]};});}
 
-function findLeague(query) {
-  if (!query) return null;
-  const exact = NORMALIZED_LEAGUES.find((league) => league.normalizedAliases.includes(query));
-  if (exact) return exact;
-  return NORMALIZED_LEAGUES.find((league) => league.normalizedAliases.some((alias) => query.length >= 5 && editDistance(alias, query) <= 2)) || null;
-}
+/** Pretražuje indeks uz sinonime, prefikse, djelomična i fuzzy podudaranja. */
+export function searchProductIndex(index,query){const original=normalizeSearchText(query);if(!original)return index.map((entry)=>entry.product);const group=findGroup(original),alternatives=queryAlternatives(original);return index.map((entry)=>{const groupMatch=group&&entryBelongsToGroup(entry,group),matchedTerm=alternatives.find((term)=>textMatches(entry,term));if(group&&!groupMatch)return null;if(!group&&!matchedTerm)return null;const term=matchedTerm||original;let score=groupMatch?600:0;if(entry.name===term||entry.club===term)score+=1000;else if(entry.name.startsWith(term)||entry.club.startsWith(term))score+=750;else if(entry.player===term)score+=650;else if(entry.haystack.includes(term))score+=450;else score+=250;return{product:entry.product,score,order:entry.order};}).filter(Boolean).sort((a,b)=>b.score-a.score||a.order-b.order).map((entry)=>entry.product);}
 
-/**
- * Jednom priprema normalizirana polja svih proizvoda.
- * @param {Array<Object>} products Proizvodi iz postojećeg izvora podataka.
- * @returns {Array<Object>} Indeks spreman za brzo filtriranje.
- */
-export function createProductSearchIndex(products) {
-  return products.map((product, order) => {
-    const name = normalizeSearchText(product.name);
-    const club = normalizeSearchText(product.club);
-    const player = normalizeSearchText(product.player);
-    const fields = [product.name, product.club, product.player, product.description, product.version, product.type, product.badge, ...(product.labels || [])];
-    return { product, order, name, club, player, haystack: normalizeSearchText(fields.filter(Boolean).join(' ')) };
-  });
-}
+/** Generira najviše nekoliko prijedloga iz grupa i stvarnih proizvoda. */
+export function getSearchSuggestions(index,query,limit=7){const terms=queryAlternatives(query),term=terms[0];if(!term)return[];const candidates=[],seen=new Set(),add=(label,type,score)=>{const key=normalizeSearchText(label);if(!label||seen.has(key))return;seen.add(key);candidates.push({label,type,score});};GROUPS.forEach((group)=>{if([group.normalizedName,...group.normalizedAliases].some((value)=>terms.some((queryTerm)=>value.includes(queryTerm)||queryTerm.length>=5&&editDistance(value,queryTerm)<=2)))add(group.name,group.name==='NBA'?'Košarkaška liga':'Liga',100);group.clubs.forEach((club,indexInGroup)=>{const normalized=group.normalizedClubs[indexInGroup];if(terms.some((queryTerm)=>tokenMatches(queryTerm,normalized.split(' '),normalized))&&index.some((entry)=>entryBelongsToGroup(entry,{normalizedClubs:[normalized]})))add(club,'Klub / tim',110);});});index.forEach((entry)=>{const product=entry.product,values=[{label:product.club,type:'Klub / tim',value:entry.club},{label:product.player&&product.club?`${product.club} ${product.player}`:product.player,type:'Igrač',value:normalizeSearchText(`${product.club||''} ${product.player||''}`)},{label:product.season&&product.club?`${product.club} ${product.season}`:'',type:'Sezona',value:normalizeSearchText(`${product.club||''} ${product.season||''}`)},{label:product.name,type:'Proizvod',value:entry.name}];values.forEach((item)=>{if(terms.some((queryTerm)=>tokenMatches(queryTerm,item.value.split(' '),item.value)))add(item.label,item.type,item.value.startsWith(term)?105:70);});});return candidates.sort((a,b)=>b.score-a.score||a.label.localeCompare(b.label,'hr')).slice(0,limit);}
 
-/**
- * Pretražuje indeks i rangira točne rezultate ispred djelomičnih.
- * @param {Array<Object>} index Indeks iz createProductSearchIndex.
- * @param {string} query Korisnički upit.
- * @returns {Array<Object>} Rangirani proizvodi.
- */
-export function searchProductIndex(index, query) {
-  const term = normalizeSearchText(query);
-  if (!term) return index.map((entry) => entry.product);
-  const league = findLeague(term);
-  const tokens = term.split(' ').filter(Boolean);
-  return index.map((entry) => {
-    const inLeague = Boolean(league?.normalizedClubs.some((club) => entryContainsClub(entry, club, league)));
-    if (league && !inLeague) return null;
-    if (!league && !tokens.every((token) => entry.haystack.includes(token))) return null;
-    let score = inLeague ? 500 : 0;
-    if (entry.name === term || entry.club === term) score += 1000;
-    else if (entry.name.startsWith(term) || entry.club.startsWith(term)) score += 700;
-    else if (entry.player === term) score += 650;
-    else if (entry.haystack.includes(term)) score += 400;
-    score += tokens.reduce((sum, token) => sum + (entry.name.startsWith(token) ? 40 : 0) + (entry.club.startsWith(token) ? 35 : 0) + (entry.player.startsWith(token) ? 30 : 0), 0);
-    return { product: entry.product, score, order: entry.order };
-  }).filter(Boolean).sort((a, b) => b.score - a.score || a.order - b.order).map((entry) => entry.product);
-}
-
-/** Vraća prijedloge liga, klubova i proizvoda iz stvarnog kataloga. */
-export function getSearchSuggestions(index, query, limit = 8) {
-  const term = normalizeSearchText(query);
-  if (!term) return [];
-  const candidates = [];
-  NORMALIZED_LEAGUES.forEach((league) => {
-    if (league.normalizedName.includes(term) || league.normalizedAliases.some((alias) => alias.includes(term))) candidates.push({ label: league.name, type: 'Liga', score: league.normalizedName.startsWith(term) ? 100 : 60 });
-    league.clubs.forEach((clubName, clubIndex) => {
-      const normalizedClub = league.normalizedClubs[clubIndex];
-      if (!normalizedClub.includes(term) || !index.some((entry) => entryContainsClub(entry, normalizedClub, league))) return;
-      candidates.push({ label: clubName, type: 'Klub', score: normalizedClub.startsWith(term) ? 95 : 55 });
-    });
-  });
-  const seen = new Set(candidates.map((item) => normalizeSearchText(item.label)));
-  index.forEach(({ product, club, player, name }) => {
-    const values = [
-      { label: product.club, type: 'Klub', value: club },
-      { label: product.player && product.club ? `${product.club} ${product.player}` : product.player, type: 'Igrač', value: normalizeSearchText(`${product.club || ''} ${product.player || ''}`) },
-      { label: product.name, type: 'Proizvod', value: name }
-    ];
-    values.forEach((item) => {
-      const key = normalizeSearchText(item.label);
-      if (!item.label || seen.has(key) || !item.value.includes(term)) return;
-      seen.add(key); candidates.push({ label: item.label, type: item.type, score: item.value.startsWith(term) ? 90 : 50 });
-    });
-  });
-  return candidates.sort((a, b) => b.score - a.score || a.label.localeCompare(b.label, 'hr')).slice(0, limit);
-}
-
-/** Kompatibilna pomoćna funkcija za izravnu pretragu liste proizvoda. */
-export function searchProducts(products, query) {
-  return searchProductIndex(createProductSearchIndex(products), query);
-}
+export function searchProducts(products,query){return searchProductIndex(createProductSearchIndex(products),query);}
