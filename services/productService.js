@@ -39,7 +39,7 @@ function fromDatabase(row) {
   const orderedImages=imageRows.map((image)=>image.image_url).filter(Boolean),images=(orderedImages.length?orderedImages:[mainImageUrl]).filter((url,index,list)=>url&&list.indexOf(url)===index);
   const isOnSale=Boolean(row.is_on_sale&&row.sale_price!=null),badge=row.is_new?'NOVO':row.is_popular?'POPULARNO':isOnSale?'AKCIJA':Number(row.quantity)===1?'ZADNJI KOMAD':'';
   const sizes=Array.isArray(row.size)?row.size:String(row.size||'').split(',').map((value)=>value.trim()).filter(Boolean);
-  return { id:row.id,name:row.name,club:row.club||'',player:row.player||'',type:row.category,productType:row.product_type||'jersey',brand:row.brand||'',color:row.color||'',condition:row.item_condition||'',genderCategory:row.gender_category||'',hasOriginalBox:row.has_original_box,sizes,costPrice:Number(row.buy_price||0),price:Number(isOnSale?row.sale_price:row.sell_price||0),oldPrice:isOnSale?Number(row.sell_price||0):null,stock:Number(row.quantity||0),description:row.description||'',status:row.status,badge,labels:[badge].filter(Boolean),createdAt:row.created_at,updatedAt:row.updated_at,mainImageUrl,isOnSale,images,archived:Boolean(row.is_archived) };
+  return { id:row.id,name:row.name,club:row.club||'',player:row.player||'',type:row.category,version:row.version||row.jersey_version||row.product_version||'',productType:row.product_type||'jersey',brand:row.brand||'',color:row.color||'',condition:row.item_condition||'',genderCategory:row.gender_category||'',hasOriginalBox:row.has_original_box,sizes,costPrice:Number(row.buy_price||0),price:Number(isOnSale?row.sale_price:row.sell_price||0),oldPrice:isOnSale?Number(row.sell_price||0):null,stock:Number(row.quantity||0),description:row.description||'',status:row.status,badge,labels:[badge].filter(Boolean),createdAt:row.created_at,updatedAt:row.updated_at,mainImageUrl,isOnSale,images,archived:Boolean(row.is_archived) };
 }
 
 /** @param {Object} product UI model. @returns {Object} Podaci za bazu. */
@@ -96,7 +96,8 @@ async function duplicateProductWithImages(productId, expectedType) {
   if (!client) throw new Error('Dupliciranje oglasa zahtijeva dostupnu Supabase vezu.');
   const original = await getProductById(productId);
   if (!original || original.productType !== expectedType) throw new Error('Proizvod za dupliciranje nije pronađen.');
-  const duplicate = await createProduct({ ...original, id: undefined, name: `Kopija - ${original.name}`, mainImageUrl: null, images: [], archived: false, createdAt: undefined, updatedAt: undefined });
+  const duplicate = await createProduct({ ...original, id: undefined, name: expectedType === 'jersey' ? original.name : `Kopija - ${original.name}`, mainImageUrl: null, images: [], archived: false, createdAt: undefined, updatedAt: undefined });
+  if(expectedType==='jersey'&&original.version)await setProductVersion(duplicate.id,original.version);
   const sourceImages = await client.from('product_images').select('*').eq('product_id', productId).order('image_order');
   throwIfSupabaseError(sourceImages.error, { service: 'productService', table: 'product_images', operation: 'dohvat slika za dupliciranje', columns: ['product_id'] });
   const copiedPaths = [];
@@ -174,6 +175,23 @@ export async function updateProduct(productId, productData) {
   if (client) { const current=await getProductById(productId);if(!current)return null;const payload=toDatabase({...current,...productData}),{data,error}=await client.from('products').update(payload).eq('id',productId).select().single();throwIfSupabaseError(error,{service:'productService',table:'products',operation:'ažuriranje proizvoda',columns:Object.keys(payload)});return fromDatabase({...data,product_images:productData.product_images||[]}); }
   if(isSupabaseConfigured())throw new Error('Supabase proizvodi trenutačno nisu dostupni.');
   const products = await getAllProducts(), product = products.find((item) => String(item.id)===String(productId)); if (!product) return null; Object.assign(product, productData, { id: product.id, updatedAt: new Date().toISOString() }); saveProducts(products); return product;
+}
+
+/** Trajno sprema verziju dresa u stupac verzije koji postoji u Supabase retku. */
+export async function setProductVersion(productId, version) {
+  const normalizedVersion=String(version||'').trim();
+  if(!normalizedVersion)throw new Error('Verzija dresa ne smije biti prazna.');
+  const client=await getSupabaseClient();
+  if(!client)throw new Error('Spremanje verzije zahtijeva dostupnu Supabase vezu.');
+  const current=await client.from('products').select('*').eq('id',productId).single();
+  throwIfSupabaseError(current.error,{service:'productService',table:'products',operation:'dohvat stupca verzije',columns:['id','version','jersey_version','product_version']});
+  const candidates=['version','jersey_version','product_version'];
+  const column=candidates.find((name)=>Object.hasOwn(current.data||{},name)&&String(current.data[name]||'').trim())||candidates.find((name)=>Object.hasOwn(current.data||{},name));
+  if(!column)throw new Error('U products tablici nije pronađen stupac za verziju dresa.');
+  const saved=await client.from('products').update({[column]:normalizedVersion}).eq('id',productId).select(column).single();
+  throwIfSupabaseError(saved.error,{service:'productService',table:'products',operation:'spremanje verzije dresa',columns:[column]});
+  if(String(saved.data?.[column]||'').trim()!==normalizedVersion)throw new Error('Supabase nije potvrdio spremljenu verziju dresa.');
+  return normalizedVersion;
 }
 
 /** @param {number|string} productId ID. @returns {Promise<Object|null>} */
