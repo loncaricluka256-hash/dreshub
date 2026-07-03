@@ -57,7 +57,8 @@ export function initFilters(products, render) {
   const syncMobileSearchSpace=()=>{if(!matchMedia('(max-width: 640px)').matches||!window.visualViewport||!searchField)return;const viewportBottom=window.visualViewport.offsetTop+window.visualViewport.height,available=Math.max(120,Math.min(260,viewportBottom-searchField.getBoundingClientRect().bottom-12));searchField.style.setProperty('--mobile-suggestions-height',`${available}px`);};
   const activateMobileSearch=()=>{if(!matchMedia('(max-width: 640px)').matches||!searchField)return;document.body.classList.add('search-mobile-active');searchField.classList.add('mobile-search-active');window.setTimeout(()=>{searchField.scrollIntoView({behavior:'smooth',block:'center'});window.setTimeout(syncMobileSearchSpace,180);},80);};
   const deactivateMobileSearch=()=>{document.body.classList.remove('search-mobile-active');searchField?.classList.remove('mobile-search-active');searchField?.style.removeProperty('--mobile-suggestions-height');};
-  const scrollToResultsStart=()=>window.setTimeout(()=>{const resultsStart=document.querySelector('[data-product-count]')?.closest('.section-heading')||document.querySelector('[data-product-grid]');resultsStart?.scrollIntoView({behavior:'smooth',block:'start'});},matchMedia('(max-width: 640px)').matches?180:20);
+  let resultsScrollTimer=0;
+  const scrollToResultsStart=()=>{window.clearTimeout(resultsScrollTimer);const mobile=matchMedia('(max-width: 640px)').matches,move=(behavior='smooth')=>{const resultsStart=document.querySelector('[data-product-count]')?.closest('.section-heading')||document.querySelector('[data-product-grid]');if(!resultsStart)return;const headerOffset=document.querySelector('.site-header')?.offsetHeight||80,top=Math.max(0,window.scrollY+resultsStart.getBoundingClientRect().top-headerOffset-16);window.scrollTo({top,behavior});};resultsScrollTimer=window.setTimeout(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{move('smooth');if(mobile)window.setTimeout(()=>move('auto'),260);})),mobile?420:30);};
 
   const closeSuggestions = () => { if (suggestions) { suggestions.hidden = true; suggestions.innerHTML = ''; } };
   const renderSuggestions = () => {
@@ -95,7 +96,10 @@ export function initFilters(products, render) {
   mobileToggle?.addEventListener('click', () => setPanel(true));
   closeButton?.addEventListener('click', () => setPanel(false));
   advanced?.addEventListener('click', (event) => { if (event.target === advanced) setPanel(false); });
-  suggestions?.addEventListener('click', (event) => { const button = event.target.closest('[data-suggestion]'); if (!button) return; event.preventDefault();event.stopPropagation();input.value = button.dataset.suggestion;update(false);deactivateMobileSearch();input.blur();scrollToResultsStart(); });
+  let lastSuggestionSelection=0;
+  const selectSuggestion=(event)=>{const button=event.target.closest('[data-suggestion]');if(!button)return;if(event.type==='click'&&performance.now()-lastSuggestionSelection<500)return;event.preventDefault();event.stopPropagation();lastSuggestionSelection=performance.now();input.value=button.dataset.suggestion;closeSuggestions();form.requestSubmit();};
+  suggestions?.addEventListener('pointerdown',selectSuggestion);
+  suggestions?.addEventListener('click',selectSuggestion);
   clearButton.addEventListener('click',()=>{input.value='';update(false);input.focus();});
   input.addEventListener('focus',activateMobileSearch);
   document.addEventListener('click', (event) => { if (!event.target.closest('.search-field')){closeSuggestions();deactivateMobileSearch();input.blur();} });
