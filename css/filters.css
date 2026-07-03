@@ -33,8 +33,12 @@
 @keyframes filter-in { from { opacity: 0; transform: translateY(-6px); } }
 
 @media (max-width: 640px) {
+  body.search-mobile-active { overscroll-behavior: contain; }
+  body.search-mobile-active::after { content:""; position:fixed; inset:0; z-index:60; pointer-events:none; background:rgba(0,0,0,.48); backdrop-filter:blur(2px); }
+  .search-field.mobile-search-active { z-index:70; scroll-margin-block:20vh; }
+  .search-field.mobile-search-active input { border-color:var(--color-gold); box-shadow:0 0 0 3px rgba(211,165,56,.12),0 16px 45px rgba(0,0,0,.45); }
   body.filters-open { overflow: hidden; }
-  .search-field input { height: 54px; font-size: .82rem; }
+  .search-field input { height: 54px; font-size: 16px; }
   .primary-filters,.filter-toggle { display: none; }
   .filter-actions { display: block; }
   .mobile-filter-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; padding-inline: 16px; }
@@ -48,6 +52,8 @@
   .filter-panel .primary-filters { margin-bottom: 15px; }
   .filter-bar select,.filter-panel .primary-filters select { height: 48px; }
   .reset-filters { width: 100%; height: 46px; margin-top: 22px; }
-  .search-suggestions { max-height: 58dvh; overflow-y: auto; }
+  .search-suggestions { max-height:var(--mobile-suggestions-height,220px); padding:5px; overflow-x:hidden; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+  .search-suggestions button { min-height:38px; padding:6px 10px; gap:10px; font-size:.76rem; }
+  .search-suggestions small { font-size:.49rem; }
   @keyframes sheet-in { from { transform: translateY(35px); opacity: 0; } }
 }
