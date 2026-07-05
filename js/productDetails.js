@@ -32,6 +32,7 @@ function renderProduct(product, products) {
     </section>
     <section class="product-info">
       <p class="eyebrow">${isJersey?(product.type === 'club' ? 'Klupski dres' : 'Reprezentacija'):product.productType==='sneaker'?'Tenisice':'Duks'}</p>
+      ${product.archived?'<p class="archived-product-label">Arhivirano / prodano</p>':''}
       <h1>${product.name}</h1>
       <p class="product-lead">${product.description}</p>
       <dl class="detail-list" ${isJersey?'':'hidden'}>
@@ -44,8 +45,8 @@ function renderProduct(product, products) {
       <div class="stock-status ${status.className}"><span></span>${status.label}</div>
       <div class="detail-price">${product.oldPrice ? `<del>${formatPrice(product.oldPrice)}</del>` : ''}<strong>${formatPrice(product.price)}</strong></div>
       <div class="product-actions">
-        <button class="button button-primary" type="button" data-reserve-detail ${product.stock < 1 ? 'disabled' : ''}>Rezerviraj</button>
-        <button class="button button-ghost" type="button" data-cart-detail ${product.stock < 1 ? 'disabled' : ''}>Dodaj u košaricu</button>
+        <button class="button button-primary" type="button" data-reserve-detail ${product.stock < 1||product.archived ? 'disabled' : ''}>Rezerviraj</button>
+        <button class="button button-ghost" type="button" data-cart-detail ${product.stock < 1||product.archived ? 'disabled' : ''}>Dodaj u košaricu</button>
         <button class="icon-button ${favorite ? 'active' : ''}" type="button" data-favorite-detail aria-label="Omiljeni" aria-pressed="${favorite}">${favorite ? '♥' : '♡'}</button>
       </div>
       <p class="purchase-note">Sigurna rezervacija bez plaćanja unaprijed. Javit ćemo vam se radi potvrde.</p>

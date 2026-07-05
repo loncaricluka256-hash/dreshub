@@ -21,3 +21,4 @@
 .icon-button.active { border-color: var(--color-gold); color: var(--color-gold-light); }
 .purchase-note { margin-top: 14px; color: #777c80; font-size: .65rem; }
 .similar-products { margin-top: clamp(60px, 9vw, 110px); padding-top: 40px; border-top: 1px solid var(--color-border); }
+.archived-product-label{display:inline-flex;margin:0 0 12px;padding:6px 10px;border:1px solid #9f433f;border-radius:999px;background:rgba(159,67,63,.14);color:#f08c85;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
