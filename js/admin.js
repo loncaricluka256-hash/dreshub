@@ -73,7 +73,7 @@ function metricCard(title, value, icon, hint = '', className = '') {
 async function refreshAll() {
   await refreshAdminCollections();
   products = await getAllProducts();
-  renderDashboard(); renderProducts(); renderOtherProducts(); renderReservations(); renderOrders(); renderFinance(); renderNotes(); renderChanges(); renderTransactions(); renderSettingsOptions();
+  renderDashboard(); renderProducts(); renderOtherProducts(); renderReservations(); renderOrders(); renderFinance(); renderNotes(); renderNoteProductLinks(); renderChanges(); renderTransactions(); renderSettingsOptions();
   document.querySelectorAll('[data-active-reservations]').forEach((element) => element.textContent = getReservations().filter((item) => item.status === 'active').length);
 }
 
@@ -233,6 +233,8 @@ function renderNotes() {
 }
 
 /** Otvara formu bilješke. @param {Object|null} note Bilješka. @returns {void} */
+function renderNoteProductLinks(){for(const note of getCollection('notes')){const card=document.querySelector(`[data-note="${CSS.escape(String(note.id))}"]`);if(!card)continue;const ids=(note.productIds||[note.productId]).filter(Boolean).map(String),linked=ids.map((id)=>products.find((product)=>String(product.id)===id)).filter(Boolean);if(!linked.length)continue;const section=document.createElement('div');section.className='note-linked-products';section.innerHTML=`<strong>Povezani dresovi</strong><ul>${linked.map((product)=>`<li>${escapeHTML(product.club||product.name)} – ${escapeHTML(product.player||'-')} – ${escapeHTML(product.version||'-')} – ${escapeHTML(product.sizes.join(', ')||'-')}</li>`).join('')}</ul>`;card.querySelector('.note-meta')?.before(section);}}
+
 function openNoteDialog(note=null) {
   const dialog=document.querySelector('[data-note-dialog]'), form=dialog.querySelector('form'); form.reset(); form.elements.id.value=note?.id||''; dialog.querySelector('[data-note-title]').textContent=note?'Uredi bilješku':'Nova bilješka';
   if(note){['title','description','type','amount','dueDate','priority','status','productId','orderId'].forEach(k=>{if(form.elements[k])form.elements[k].value=note[k]??''});form.elements.tags.value=(note.tags||[]).join(', ');form.elements.pinned.checked=Boolean(note.pinned);}
@@ -250,11 +252,21 @@ function renderChanges() {
 function renderTransactions() { const type=document.querySelector('[data-transaction-type]')?.value||'all'; const items=getCollection('transactions').filter(i=>type==='all'||i.type===type); document.querySelector('[data-transactions-list]').innerHTML=transactionRows(items); }
 
 /** Popunjava obrasce postavki i povezane select kontrole. @returns {void} */
+function setupNoteProductPicker(select){
+  select.classList.add('modern-multi-native');
+  let picker=select.closest('label').querySelector('[data-note-product-picker]');
+  if(!picker){picker=document.createElement('div');picker.className='modern-multi';picker.dataset.noteProductPicker='';picker.innerHTML='<div class="modern-multi-chips" data-note-product-chips></div><div class="modern-multi-search">⌕<input type="search" aria-label="Pretraži povezane dresove" placeholder="Pretraži klub, igrača, verziju ili veličinu…" data-note-product-search></div><div class="modern-multi-options" data-note-product-options></div><small>Kliknite dres za odabir ili ponovno kliknite za uklanjanje.</small>';select.insertAdjacentElement('afterend',picker);}
+  const search=picker.querySelector('[data-note-product-search]'),chips=picker.querySelector('[data-note-product-chips]'),list=picker.querySelector('[data-note-product-options]');
+  const render=()=>{const query=search.value.trim().toLocaleLowerCase('hr'),options=[...select.options];list.innerHTML=options.filter((option)=>!query||option.textContent.toLocaleLowerCase('hr').includes(query)).map((option)=>`<button type="button" class="modern-multi-option ${option.selected?'selected':''}" data-picker-value="${escapeHTML(option.value)}" aria-pressed="${option.selected}"><span>${escapeHTML(option.textContent)}</span><b aria-hidden="true">${option.selected?'✓':'+'}</b></button>`).join('')||'<p class="modern-multi-empty">Nema dresova za ovu pretragu.</p>';const selected=options.filter((option)=>option.selected);chips.innerHTML=selected.length?selected.map((option)=>`<button type="button" data-remove-picker-value="${escapeHTML(option.value)}"><span>${escapeHTML(option.textContent)}</span><b aria-hidden="true">×</b></button>`).join(''):'<span class="modern-multi-placeholder">Nema odabranih dresova</span>';};
+  if(!picker.dataset.bound){picker.dataset.bound='true';search.addEventListener('input',render);list.addEventListener('click',(event)=>{const button=event.target.closest('[data-picker-value]');if(!button)return;const option=[...select.options].find((item)=>String(item.value)===button.dataset.pickerValue);if(option){option.selected=!option.selected;select.dispatchEvent(new Event('change',{bubbles:true}));render();}});chips.addEventListener('click',(event)=>{const button=event.target.closest('[data-remove-picker-value]');if(!button)return;const option=[...select.options].find((item)=>String(item.value)===button.dataset.removePickerValue);if(option){option.selected=false;select.dispatchEvent(new Event('change',{bubbles:true}));render();}});select.form?.addEventListener('reset',()=>window.setTimeout(()=>{search.value='';render();}));}
+  select._renderPicker=render;render();
+}
+
 function renderSettingsOptions() {
   const settings=getAdminSettings(), form=document.querySelector('[data-settings-form]');
   document.documentElement.dataset.adminTheme = settings.theme || 'dark';
   ['storeName','email','phoneLuki','phoneBlaz','instagram','notification','reservationHours','theme'].forEach(key=>{if(form.elements[key])form.elements[key].value=settings[key]??''}); form.elements.notificationVisible.checked=Boolean(settings.notificationVisible); form.elements.badges.value=(settings.badges||[]).join(', ');
-  document.querySelector('[data-note-product]').innerHTML='<option value="">Nije povezano</option>'+products.filter(p=>!p.archived).map(p=>`<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('');
+  const noteProducts=document.querySelector('[data-note-product]');noteProducts.multiple=true;noteProducts.size=8;noteProducts.closest('label').childNodes[0].textContent='Povezani dresovi';noteProducts.innerHTML=products.filter((product)=>!product.archived&&product.productType==='jersey').map((product)=>`<option value="${product.id}">${escapeHTML(product.club||product.name)} – ${escapeHTML(product.player||'-')} – ${escapeHTML(product.version||'-')} – ${escapeHTML(product.sizes.join(', ')||'-')}</option>`).join('');setupNoteProductPicker(noteProducts);
   document.querySelector('[data-note-order]').innerHTML='<option value="">Nije povezano</option>'+getCollection('orders').map(o=>`<option value="${o.id}">${escapeHTML(o.title)}</option>`).join('');
 }
 
@@ -367,6 +379,9 @@ function bindFinance() {
 
 /** Povezuje upravljanje bilješkama. @returns {void} */
 function bindNotes() {
+  const noteForm=document.querySelector('[data-note-form]');
+  const selectLinkedProducts=(note)=>{const selected=new Set((note?.productIds||[note?.productId]).filter(Boolean).map(String));[...noteForm.elements.productId.options].forEach((option)=>option.selected=selected.has(String(option.value)));noteForm.elements.productId._renderPicker?.();};
+  noteForm.addEventListener('submit',async(event)=>{event.preventDefault();event.stopImmediatePropagation();const form=event.currentTarget,submit=form.querySelector('[type="submit"]');submit.disabled=true;try{const data=new FormData(form),id=data.get('id'),existing=getCollection('notes').find((note)=>String(note.id)===String(id)),productIds=[...form.elements.productId.selectedOptions].map((option)=>option.value),note={title:data.get('title').trim(),description:data.get('description').trim(),type:data.get('type'),amount:data.get('amount')?Number(data.get('amount')):null,dueDate:data.get('dueDate')||null,priority:data.get('priority'),status:data.get('status'),tags:data.get('tags').split(',').map((tag)=>tag.trim()).filter(Boolean),productIds,productId:productIds[0]||null,orderId:data.get('orderId')||null,pinned:data.get('pinned')==='on'};if(existing)await updateNote(id,note);else await createNote(note);recordChange('notes',existing?`Uređena bilješka: ${note.title}`:`Dodana bilješka: ${note.title}`,existing||null,note);document.querySelector('[data-note-dialog]').close();toast('Bilješka je spremljena.');await refreshAll();}catch(error){console.error('[DresHub Bilješke]',{service:'noteService',table:'notes + note_products',operation:'spremanje bilješke',message:error.message});toast(`Bilješka nije spremljena: ${error.message}`);}finally{submit.disabled=false;}},{capture:true});
   document.querySelector('[data-note-status]').addEventListener('change',renderNotes);document.querySelector('[data-note-priority]').addEventListener('change',renderNotes);
   document.querySelector('[data-note-form]').addEventListener('submit',async(event)=>{event.preventDefault();const form=event.currentTarget,submit=form.querySelector('[type="submit"]');submit.disabled=true;try{const data=new FormData(form),id=data.get('id'),existing=getCollection('notes').find(n=>String(n.id)===String(id)),note={title:data.get('title').trim(),description:data.get('description').trim(),type:data.get('type'),amount:data.get('amount')?Number(data.get('amount')):null,dueDate:data.get('dueDate')||null,priority:data.get('priority'),status:data.get('status'),tags:data.get('tags').split(',').map(x=>x.trim()).filter(Boolean),productId:data.get('productId')||null,orderId:data.get('orderId')||null,pinned:data.get('pinned')==='on'};if(existing)await updateNote(id,note);else await createNote(note);recordChange('notes',existing?`Uređena bilješka: ${note.title}`:`Dodana bilješka: ${note.title}`,existing||null,note);document.querySelector('[data-note-dialog]').close();toast('Bilješka je spremljena.');await refreshAll();}catch(error){console.error('[DresHub Bilješke]',{service:'noteService',table:'notes',operation:'spremanje bilješke',message:error.message});toast(`Bilješka nije spremljena: ${error.message}`);}finally{submit.disabled=false;}});
   document.querySelector('[data-notes-list]').addEventListener('click',async(event)=>{
@@ -376,7 +391,7 @@ function bindNotes() {
     const note=getCollection('notes').find((item)=>String(item.id)===String(noteId));
     if(!note){console.warn('[DresHub Bilješke] Bilješka nije pronađena; akcija je prekinuta.',{noteId});return;}
     try{
-      if(button.matches('[data-edit-note]')){openNoteDialog(note);return;}
+      if(button.matches('[data-edit-note]')){openNoteDialog(note);selectLinkedProducts(note);return;}
       if(button.matches('[data-complete-note]')){await completeNote(noteId);recordChange('notes',`Završena bilješka: ${note.title}`,'Aktivna','Završena');}
       else if(button.matches('[data-archive-note]')){await archiveNote(noteId);recordChange('notes',`Arhivirana bilješka: ${note.title}`,null,'Arhivirana');}
       else if(button.matches('[data-delete-note]')){if(!confirm('Obrisati bilješku?'))return;await deleteNote(noteId);recordChange('notes',`Obrisana bilješka: ${note.title}`,note,null);}
