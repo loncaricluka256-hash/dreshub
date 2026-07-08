@@ -1,5 +1,5 @@
 import { initComponents } from './components.js';
-import { createProductCard, loadProducts, renderProducts } from './products.js';
+import { createProductCard, loadProducts, renderProductSkeletons, renderProducts } from './products.js';
 import { initFilters } from './filters.js';
 import { isFavorite, toggleFavorite } from '../services/favoritesService.js';
 import { addToCart } from '../services/cartService.js';
@@ -55,6 +55,7 @@ async function init() {
     await initComponents();
     initReservationModal();
     initLightbox();
+    renderProductSkeletons();
     const products = await loadProducts();
     await renderOtherProductsPromo();
     renderProducts(products);

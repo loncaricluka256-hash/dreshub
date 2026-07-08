@@ -9,6 +9,9 @@ let productChannel=null;
 /** @param {Object|null} product Proizvod. @returns {string} Glavna slika ili placeholder. */
 export function getProductMainImage(product){return product?.mainImageUrl||product?.images?.[0]||PRODUCT_PLACEHOLDER_IMAGE;}
 
+/** @param {Object|null} product Proizvod. @param {number} [width=520] Ciljana širina. @returns {string} Optimizirana slika za kartice. */
+export function getProductCardImage(product,width=520){const image=getProductMainImage(product);if(!image||image===PRODUCT_PLACEHOLDER_IMAGE)return image;try{const url=new URL(image,location.origin);if(!url.pathname.includes('/storage/v1/object/public/product-images/'))return image;url.pathname=url.pathname.replace('/storage/v1/object/public/','/storage/v1/render/image/public/');url.searchParams.set('width',String(width));url.searchParams.set('height',String(width));url.searchParams.set('resize','contain');url.searchParams.set('quality','72');return url.toString();}catch{return image;}}
+
 /** Prati promjene proizvoda radi sinkronizacije zalihe među uređajima. @param {(products:Array<Object>)=>void} callback Poziv nakon promjene. @returns {Promise<()=>Promise<void>>} Odjava. */
 export async function subscribeToProductChanges(callback,productTypes='jersey'){const client=await getSupabaseClient();if(!client||productChannel)return async()=>{};productChannel=client.channel('dreshub-public-products').on('postgres_changes',{event:'*',schema:'public',table:'products'},async()=>callback?.(productTypes==='jersey'?await getProducts():await getProductsByType(productTypes))).subscribe();return async()=>{if(productChannel){await client.removeChannel(productChannel);productChannel=null;}};}
 

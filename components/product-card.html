@@ -3,7 +3,7 @@
     <div class="card-media">
       <span class="badge {{badgeClass}}">{{badge}}</span>
       <button class="favorite-button {{favoriteClass}}" type="button" data-favorite="{{id}}" aria-label="{{favoriteLabel}}" aria-pressed="{{favoritePressed}}"><span aria-hidden="true">{{favoriteIcon}}</span></button>
-      <a href="product.html?id={{id}}" aria-label="Otvori {{name}}"><img src="{{image}}" alt="{{name}}" loading="lazy"></a>
+      <a href="product.html?id={{id}}" aria-label="Otvori {{name}}"><img src="{{image}}" data-original-src="{{originalImage}}" alt="{{name}}" loading="lazy" decoding="async" width="520" height="520" onerror="this.onerror=null;this.src=this.dataset.originalSrc"></a>
     </div>
     <div class="card-content">
       <p class="card-club">{{club}}</p>

@@ -52,7 +52,7 @@ export function initFilters(products, render) {
   const mobileToggle = form.querySelector('[data-mobile-filter-toggle]');
   const closeButton = form.querySelector('[data-filter-close]');
   let searchIndex = createProductSearchIndex(products);
-  let frame = 0;
+  let frame = 0,debounceTimer=0;
 
   const syncMobileSearchSpace=()=>{if(!matchMedia('(max-width: 640px)').matches||!window.visualViewport||!searchField)return;const viewportBottom=window.visualViewport.offsetTop+window.visualViewport.height,available=Math.max(120,Math.min(260,viewportBottom-searchField.getBoundingClientRect().bottom-12));searchField.style.setProperty('--mobile-suggestions-height',`${available}px`);};
   const activateMobileSearch=()=>{if(!matchMedia('(max-width: 640px)').matches||!searchField)return;document.body.classList.add('search-mobile-active');searchField.classList.add('mobile-search-active');window.setTimeout(()=>{searchField.scrollIntoView({behavior:'smooth',block:'center'});window.setTimeout(syncMobileSearchSpace,180);},80);};
@@ -69,10 +69,12 @@ export function initFilters(products, render) {
     clearButton.hidden=!input.value;
   };
   const update = (showSuggestions = false) => {
+    clearTimeout(debounceTimer);
     if(showSuggestions)renderSuggestions();else{closeSuggestions();clearButton.hidden=!input.value;}
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => render(applyCatalogControls(products, form, searchIndex)));
   };
+  const updateDebounced=(showSuggestions=false)=>{if(showSuggestions)renderSuggestions();else{closeSuggestions();clearButton.hidden=!input.value;}clearTimeout(debounceTimer);debounceTimer=setTimeout(()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(()=>render(applyCatalogControls(products,form,searchIndex)));},280);};
   const setPanel = (open) => {
     advanced?.classList.toggle('open', open);
     advanced?.setAttribute('aria-hidden', String(!open));
@@ -88,7 +90,7 @@ export function initFilters(products, render) {
   };
 
   arrangeFilters();
-  input.addEventListener('input',()=>update(true));
+  input.addEventListener('input',()=>updateDebounced(true));
   form.addEventListener('change',()=>update(false));
   form.addEventListener('submit',(event)=>{event.preventDefault();update(false);deactivateMobileSearch();input.blur();scrollToResultsStart();});
   form.addEventListener('reset', () => window.setTimeout(() => { setPanel(false); closeSuggestions();deactivateMobileSearch();update(); }));
