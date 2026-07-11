@@ -5,10 +5,10 @@ import {
 } from '../services/adminService.js';
 import { getReservations, subscribeToReservationChanges } from '../services/reservationService.js';
 import { createPurchaseOrder, updatePurchaseOrder, finalizePurchaseOrder, copyPurchaseOrder } from '../services/purchaseOrderService.js';
-import { createTransaction, createLiveSale, voidLiveSale } from '../services/transactionService.js';
+import { createTransaction, updateTransaction, deleteTransaction, createLiveSale, updateLiveSale, voidLiveSale } from '../services/transactionService.js';
 import { createNote, updateNote, deleteNote, archiveNote, completeNote } from '../services/noteService.js';
 import { uploadProductImages, getProductImages, setMainProductImage, replaceProductImage, deleteProductImage, reorderProductImages } from '../services/imageService.js';
-import { getSellers, createSeller, updateSeller, upsertSellerListing, removeSellerListing, handoffSellerProducts, returnOneSellerPhysicalProduct, returnAllSellerPhysicalProduct, syncSellerProductQuantity } from '../services/sellerService.js';
+import { getSellers, createSeller, updateSeller, deleteSeller, addSellerListings, removeSellerListing, addSellerPhysicalItems, returnOneSellerPhysicalItem, returnAllSellerPhysicalItems, syncSellerListingsAfterSale } from '../services/sellerService.js';
 import { getAdminPassword } from '../services/settingsService.js';
 import { formatPrice, escapeHTML } from './utils.js';
 
@@ -24,10 +24,13 @@ let orderDraft = [];
 let activeReservationStatus = 'active';
 let activeOrderStatus = 'open';
 let saleDraft = [];
+let editingTransactionId = null;
+let originalSaleQuantities = new Map();
 let sellers = [];
 let activeSellerId = null;
-let sellerPickerDraft = [];
-let sellerPickerMode = 'handoff';
+let sellerListingDraft = [];
+let sellerListingMode = 'jersey';
+let sellerPickerPurpose = 'listing';
 const ADMIN_PAGE_SIZE = 25;
 const adminPages = new Map();
 const adminPageSignatures = new Map();
@@ -83,7 +86,7 @@ function metricCard(title, value, icon, hint = '', className = '') {
 async function refreshAll() {
   await refreshAdminCollections();
   products = await getAllProducts();
-  try { sellers = await getSellers(); } catch(error) { console.error('[DresHub Prodavači]', { service:'sellerService', table:'sellers', operation:'osvježavanje prodavača', message:error.message }); sellers = []; }
+  try { sellers = await getSellers(); } catch(error) { console.error('[DresHub Prodavači]', error); sellers = []; }
   renderDashboard(); renderProducts(); renderOtherProducts(); renderSellers(); renderReservations(); renderOrders(); renderFinance(); renderNotes(); renderNoteProductLinks(); renderChanges(); renderTransactions(); renderSettingsOptions();
   document.querySelectorAll('[data-active-reservations]').forEach((element) => element.textContent = getReservations().filter((item) => item.status === 'active').length);
 }
@@ -136,7 +139,7 @@ function renderProducts() {
   const filtered = products.filter((product) => product.productType === 'jersey' && (status === 'all' || (status === 'archived') === Boolean(product.archived)) && `${product.name} ${product.club} ${product.player}`.toLocaleLowerCase('hr').includes(query));
   const page = adminPageSlice('admin-products', filtered, renderProducts);
   document.querySelector('[data-products-summary]').textContent = `${filtered.length} proizvoda · ${filtered.reduce((sum,item)=>sum+item.stock,0)} komada`;
-  document.querySelector('[data-products-list]').innerHTML = (page.items.map((product) => `<article class="admin-product" data-admin-product="${escapeHTML(product.id)}"><img src="${escapeHTML(adminThumb(product))}" data-original-src="${escapeHTML(getProductMainImage(product))}" alt="${escapeHTML(product.name)}" loading="lazy" decoding="async" width="64" height="64" onerror="this.onerror=null;this.src=this.dataset.originalSrc"><div class="admin-product-info"><strong>${escapeHTML(product.name)}</strong><small>${escapeHTML(product.club)} · ${escapeHTML(product.player)} · ${escapeHTML(product.version)}</small></div><span class="product-tag">${escapeHTML(product.badge)}</span><div class="stock-stepper"><button data-stock="-1" aria-label="Smanji">−</button><output>${product.stock}</output><button data-stock="1" aria-label="Povećaj">+</button></div><div class="admin-product-price"><strong>${formatPrice(product.price)}</strong><small>Nabava ${formatPrice(product.costPrice || 0)}</small></div><div class="row-actions"><button data-edit-product title="Uredi">✎</button><button data-archive-product title="${product.archived?'Vrati':'Arhiviraj'}">${product.archived?'↥':'▣'}</button><button class="danger" data-delete-product title="Obriši">×</button></div></article>`).join('') || emptyAdmin('Nema proizvoda za odabrani prikaz.')) + page.pagination;
+  document.querySelector('[data-products-list]').innerHTML = (page.items.map((product) => `<article class="admin-product" data-admin-product="${escapeHTML(product.id)}"><img src="${escapeHTML(adminThumb(product))}" data-original-src="${escapeHTML(getProductMainImage(product))}" alt="${escapeHTML(product.name)}" loading="lazy" decoding="async" width="64" height="64" onerror="this.onerror=null;this.src=this.dataset.originalSrc"><div class="admin-product-info"><strong>${escapeHTML(product.name)}</strong><small>${escapeHTML(product.club)} · ${escapeHTML(product.player)} · ${escapeHTML(product.version)}</small></div><span class="product-tag">${escapeHTML(product.badge)}</span><div class="stock-stepper"><button data-stock="-1" aria-label="Smanji">−</button><output>${product.stock}</output><button data-stock="1" aria-label="Povećaj">+</button></div><div class="admin-product-price"><strong>${formatPrice(product.price)}</strong><small>Nabava ${formatPrice(product.costPrice || 0)}</small></div><div class="row-actions"><button data-edit-product title="Uredi">✎</button><button data-archive-product title="${product.archived?'Vrati':'Arhiviraj'}">${product.archived?'↥':'▣'}</button><button class="danger" data-delete-product title="Obri\u0161i">×</button></div></article>`).join('') || emptyAdmin('Nema proizvoda za odabrani prikaz.')) + page.pagination;
 }
 
 /** Otvara formu proizvoda. @param {Object|null} product Postojeći proizvod. @returns {void} */
@@ -146,79 +149,230 @@ function setupOtherProductsAdminUI(){
   const productNav=document.querySelector('[data-view-target="products"]');
   if(productNav&&!document.querySelector('[data-view-target="otherProducts"]'))productNav.insertAdjacentHTML('afterend','<button data-view-target="otherProducts"><span>◆</span>Tenisice i duksevi</button>');
   const otherNav=document.querySelector('[data-view-target="otherProducts"]')||productNav;
-  if(otherNav&&!document.querySelector('[data-view-target="sellers"]'))otherNav.insertAdjacentHTML('afterend','<button data-view-target="sellers"><span>◉</span>Prodavači <b data-seller-open-count hidden>0</b></button>');
+  if(otherNav&&!document.querySelector('[data-view-target="sellers"]'))otherNav.insertAdjacentHTML('afterend','<button data-view-target="sellers"><span>◉</span>Prodavači</button>');
   const productView=document.querySelector('[data-view="products"]');
   if(productView){productView.querySelector('h1').textContent='Dresovi';const addButton=productView.querySelector('[data-open-product]');if(addButton)addButton.textContent='+ Dodaj dres';}
   if(productView&&!document.querySelector('[data-view="otherProducts"]'))productView.insertAdjacentHTML('afterend','<section class="admin-view" data-view="otherProducts"><header class="view-header"><div><p class="eyebrow">Ostali proizvodi</p><h1>Tenisice i duksevi</h1><p>Odvojeno upravljanje ponudom izvan kataloga dresova.</p></div><div class="other-product-create"><button class="admin-primary-action" data-open-other="sneaker">+ Dodaj tenisice</button><button class="admin-secondary-action" data-open-other="hoodie">+ Dodaj duks</button><button class="admin-secondary-action" data-prefill-nike>Pripremi Nike primjer</button></div></header><div class="admin-toolbar"><label class="admin-search">⌕<input type="search" data-other-product-search placeholder="Pretraži naziv, brend ili boju…"></label><select data-other-product-type><option value="all">Tenisice i duksevi</option><option value="sneaker">Tenisice</option><option value="hoodie">Duksevi</option></select><span data-other-products-summary></span></div><div class="product-admin-list" data-other-products-list></div></section>');
   const otherView=document.querySelector('[data-view="otherProducts"]')||productView;
-  if(otherView&&!document.querySelector('[data-view="sellers"]'))otherView.insertAdjacentHTML('afterend','<section class="admin-view" data-view="sellers"><header class="view-header"><div><p class="eyebrow">Prodavači</p><h1>Prodavači</h1><p>Praćenje tko oglašava proizvode i što je fizički kod prodavača.</p></div><button class="admin-primary-action" data-open-seller>+ Novi prodavač</button></header><div class="seller-alerts" data-seller-notifications></div><div class="admin-toolbar sellers-toolbar"><label class="admin-search">⌕<input type="search" data-seller-search placeholder="Prodavač, proizvod, veličina…"></label><select data-seller-status><option value="all">Svi statusi</option><option value="active">Aktivni</option><option value="inactive">Neaktivni</option></select><select data-seller-filter><option value="all">Svi proizvodi</option><option value="physical">Fizički kod prodavača</option><option value="out">Nedostupni proizvodi</option></select><span data-sellers-summary></span></div><div class="sellers-layout"><div class="sellers-list" data-sellers-list></div><div class="seller-profile" data-seller-profile></div></div></section>');
-  if(!document.querySelector('[data-seller-dialog]'))document.body.insertAdjacentHTML('beforeend','<dialog class="admin-dialog" data-seller-dialog><form class="dialog-card compact-form" data-seller-form method="dialog"><header><div><p class="eyebrow">Prodavači</p><h2 data-seller-dialog-title>Novi prodavač</h2></div><button type="button" data-close-dialog>×</button></header><input type="hidden" name="id"><label>Ime i prezime<input name="fullName" required></label><label>Mobitel<input name="phone"></label><label>Instagram / Facebook / kontakt<input name="contact"></label><label>Datum početka<input type="date" name="startedAt"></label><label>Status<select name="status"><option value="active">Aktivan</option><option value="inactive">Neaktivan</option></select></label><label>Napomena<textarea name="note" rows="4"></textarea></label><footer><button type="button" data-dialog-cancel>Odustani</button><button type="submit" class="admin-primary-action">Spremi prodavača</button></footer></form></dialog><dialog class="admin-dialog" data-seller-product-dialog><form class="dialog-card seller-product-form" data-seller-product-form method="dialog"><header><div><p class="eyebrow" data-seller-product-eyebrow>Prodavači</p><h2 data-seller-product-title>Odaberi proizvode</h2></div><button type="button" data-close-dialog>×</button></header><input type="hidden" name="sellerId"><input type="hidden" name="mode"><label class="field-wide">Napomena<textarea name="note" rows="3"></textarea></label><label class="field-wide">Datum predaje<input type="datetime-local" name="handedOffAt"></label><div class="modern-multi seller-picker"><div class="modern-multi-chips" data-seller-product-selected></div><div class="modern-multi-search">⌕<input type="search" data-seller-product-search placeholder="Pretraži proizvode…"></div><div class="modern-multi-options" data-seller-product-options></div><small>Klik na proizvod odabire ga; količinu podešavaš u odabranim karticama.</small></div><footer><button type="button" data-dialog-cancel>Odustani</button><button type="submit" class="admin-primary-action">Spremi</button></footer></form></dialog><dialog class="admin-dialog" data-seller-sale-alert-dialog><div class="dialog-card seller-sale-alert-dialog"><header><div><p class="eyebrow">Prodavači</p><h2 data-seller-sale-alert-title>Potrebno je javiti prodavačima</h2></div><button type="button" data-close-dialog>×</button></header><div data-seller-sale-alert-list></div><footer><button type="button" class="admin-primary-action" data-close-dialog>Zatvori</button></footer></div></dialog>');
+  if(otherView&&!document.querySelector('[data-view="sellers"]'))otherView.insertAdjacentHTML('afterend','<section class="admin-view" data-view="sellers"><header class="view-header"><div><p class="eyebrow">Prodavači</p><h1>Prodavači</h1><p>Osnovna evidencija prodavača. Trenutno su omogućeni samo dodavanje, uređivanje i brisanje.</p></div><button class="admin-primary-action" data-open-seller>+ Novi prodavač</button></header><div class="sellers-layout"><div class="sellers-list" data-sellers-list></div><div class="seller-profile" data-seller-profile></div></div></section>');
+  if(!document.querySelector('[data-seller-dialog]'))document.body.insertAdjacentHTML('beforeend','<dialog class="admin-dialog" data-seller-dialog><form class="dialog-card compact-form" data-seller-form method="dialog"><header><div><p class="eyebrow">Prodavači</p><h2 data-seller-dialog-title>Novi prodavač</h2></div><button type="button" data-close-dialog>×</button></header><input type="hidden" name="id"><label>Ime prodavača<input name="name" required autocomplete="off"></label><label>Napomena<textarea name="note" rows="4"></textarea></label><footer><button type="button" data-dialog-cancel>Odustani</button><button type="submit" class="admin-primary-action">Spremi prodavača</button></footer></form></dialog>');
+  if(!document.querySelector('[data-seller-listing-dialog]'))document.body.insertAdjacentHTML('beforeend','<dialog class="admin-dialog" data-seller-listing-dialog><form class="dialog-card seller-product-form" data-seller-listing-form method="dialog"><header><div><p class="eyebrow">Prodavači</p><h2 data-seller-listing-title>Dodaj u oglašavanje</h2></div><button type="button" data-close-dialog>×</button></header><input type="hidden" name="sellerId"><input type="hidden" name="mode"><input type="hidden" name="purpose"><div class="modern-multi seller-picker"><div class="modern-multi-chips" data-seller-listing-selected></div><div class="modern-multi-search">⌕<input type="search" data-seller-listing-search placeholder="Pretraži proizvode…"></div><div class="modern-multi-options" data-seller-listing-options></div><small data-seller-picker-help>Klik na proizvod odabire ili uklanja proizvod. Količina je početno jednaka trenutnom stanju u skladištu.</small></div><footer><button type="button" data-dialog-cancel>Odustani</button><button type="submit" class="admin-primary-action" data-seller-listing-submit>Spremi oglašavanje</button></footer></form></dialog>');
+  if(!document.querySelector('[data-seller-sale-alert-dialog]'))document.body.insertAdjacentHTML('beforeend','<dialog class="admin-dialog" data-seller-sale-alert-dialog><section class="dialog-card seller-sale-alert-dialog"><header><div><p class="eyebrow">Prodava&#269;i</p><h2 data-seller-sale-alert-title>Potrebno je javiti prodava&#269;ima</h2></div><button type="button" data-close-dialog>&times;</button></header><div data-seller-sale-alert-list></div><footer><button type="button" class="admin-primary-action" data-dialog-cancel>Zatvori</button></footer></section></dialog>');
   const form=document.querySelector('[data-product-form]'),imageLabel=form?.elements.images?.closest('label');
   if(form&&imageLabel&&!form.elements.productType)imageLabel.insertAdjacentHTML('beforebegin','<input type="hidden" name="productType" value="jersey"><label class="other-product-field">Brend<input name="brand"></label><label class="other-product-field">Boja<input name="color"></label><label class="other-product-field">Stanje<select name="condition"><option value="new">Novo</option><option value="worn">Nošeno</option><option value="very_good">Vrlo dobro</option><option value="damaged">Oštećeno</option></select></label><label class="other-product-field">Spol / kategorija<select name="genderCategory"><option value="men">Muški</option><option value="women">Ženski</option><option value="unisex">Unisex</option></select></label><label class="other-product-field sneaker-only checkbox-field"><input type="checkbox" name="hasOriginalBox"> Originalna kutija</label>');
 }
 
-function renderOtherProducts(){const list=document.querySelector('[data-other-products-list]');if(!list)return;const query=(document.querySelector('[data-other-product-search]')?.value||'').toLocaleLowerCase('hr'),type=document.querySelector('[data-other-product-type]')?.value||'all',items=products.filter((product)=>['sneaker','hoodie'].includes(product.productType)&&(type==='all'||product.productType===type)&&`${product.name} ${product.brand} ${product.color}`.toLocaleLowerCase('hr').includes(query)),page=adminPageSlice('admin-other-products',items,renderOtherProducts);document.querySelector('[data-other-products-summary]').textContent=`${items.length} proizvoda`;list.innerHTML=(page.items.map((product)=>`<article class="admin-product" data-other-product="${escapeHTML(product.id)}"><img src="${escapeHTML(adminThumb(product))}" data-original-src="${escapeHTML(getProductMainImage(product))}" alt="${escapeHTML(product.name)}" loading="lazy" decoding="async" width="64" height="64" onerror="this.onerror=null;this.src=this.dataset.originalSrc"><div class="admin-product-info"><strong>${escapeHTML(product.name)}</strong><small>${product.productType==='sneaker'?'Tenisice':'Duks'} · ${escapeHTML(product.brand)} · ${escapeHTML(product.sizes.join(', '))}</small></div><span class="product-tag">${product.productType==='sneaker'?'TENISICE':'DUKS'}</span><div class="stock-stepper"><output>${product.stock}</output></div><div class="admin-product-price"><strong>${formatPrice(product.price)}</strong></div><div class="row-actions"><button class="sell-product-button" data-sell-product title="Prodaj proizvod" ${product.stock<1||product.archived?'disabled':''}>¤ Prodaj</button>${product.productType==='sneaker'?'<button data-duplicate-other title="Dupliciraj">⧉</button>':''}<button data-archive-other title="${product.archived?'Vrati':'Arhiviraj'}">${product.archived?'↥':'▣'}</button><button data-edit-other title="Uredi">✎</button><button class="danger" data-delete-other title="Obriši">×</button></div></article>`).join('')||emptyAdmin('Nema tenisica ili dukseva za odabrani prikaz.'))+page.pagination;}
-
-function productKindLabel(product){return product.productType==='sneaker'?'Tenisice':product.productType==='hoodie'?'Duks':'Dres';}
-function productVariantLabel(product){return product.productType==='jersey'?[product.player,product.version,product.sizes?.join(', ')].filter(Boolean).join(' · '):[product.brand,product.color,product.condition,product.sizes?.join(', ')].filter(Boolean).join(' · ');}
-function sellerProductRow(product,extra=''){return`<div class="seller-product-mini"><img src="${escapeHTML(adminThumb(product))}" data-original-src="${escapeHTML(getProductMainImage(product))}" alt="${escapeHTML(product.name)}" loading="lazy" decoding="async" width="54" height="54" onerror="this.onerror=null;this.src=this.dataset.originalSrc"><span><a href="product.html?id=${escapeHTML(product.id)}" data-product-detail-link="${escapeHTML(product.id)}">${escapeHTML(product.name)}</a><small>${escapeHTML(productVariantLabel(product)||productKindLabel(product))}</small>${extra}</span></div>`;}
-function sellerSummary(seller){const activeListings=seller.listings.filter((item)=>item.status==='active'),physical=seller.physicalItems.filter((item)=>item.quantity>0),lastHandoff=physical.map((item)=>item.handedOffAt).sort().at(-1);return{distinct:activeListings.length,advertisedQty:activeListings.reduce((sum,item)=>sum+item.quantity,0),physicalQty:physical.reduce((sum,item)=>sum+item.quantity,0),lastHandoff,lastUpdate:seller.updatedAt};}
-function sellerMatchesFilters(seller){const query=(document.querySelector('[data-seller-search]')?.value||'').toLocaleLowerCase('hr'),status=document.querySelector('[data-seller-status]')?.value||'all',filter=document.querySelector('[data-seller-filter]')?.value||'all';if(status!=='all'&&seller.status!==status)return false;const related=[...seller.listings,...seller.physicalItems].map((item)=>products.find((product)=>String(product.id)===String(item.productId))).filter(Boolean),haystack=[seller.fullName,seller.phone,seller.contact,...related.flatMap((product)=>[product.name,product.club,product.player,product.brand,product.version,product.productType,product.sizes?.join(' ')])].join(' ').toLocaleLowerCase('hr');if(query&&!haystack.includes(query))return false;if(filter==='physical'&&!seller.physicalItems.some((item)=>item.quantity>0))return false;if(filter==='out'&&!seller.listings.some((item)=>{const product=products.find((entry)=>String(entry.id)===String(item.productId));return product&&(product.archived||product.stock<1);} ))return false;return true;}
-
-function renderSellerNotifications(){const root=document.querySelector('[data-seller-notifications]');if(root)root.innerHTML='';const badge=document.querySelector('[data-seller-open-count]');if(badge){badge.hidden=true;badge.textContent='0';}}
-
-function renderSellers(){const list=document.querySelector('[data-sellers-list]'),profile=document.querySelector('[data-seller-profile]');if(!list||!profile)return;renderSellerNotifications();const filtered=sellers.filter(sellerMatchesFilters),page=adminPageSlice('admin-sellers',filtered,renderSellers);document.querySelector('[data-sellers-summary]').textContent=`${filtered.length} prodavača`;if(!activeSellerId&&filtered[0])activeSellerId=filtered[0].id;if(activeSellerId&&!sellers.some((seller)=>String(seller.id)===String(activeSellerId)))activeSellerId=filtered[0]?.id||null;list.innerHTML=(page.items.map((seller)=>{const summary=sellerSummary(seller);return`<article class="seller-card ${String(seller.id)===String(activeSellerId)?'active':''}" data-seller-card="${escapeHTML(seller.id)}"><header><div><h2>${escapeHTML(seller.fullName)}</h2><small>${escapeHTML(seller.contact||seller.phone||'Bez kontakta')}</small></div><span class="status-pill ${seller.status==='inactive'?'cancelled':'completed'}">${seller.status==='active'?'Aktivan':'Neaktivan'}</span></header><div class="seller-card-stats"><span><b>${summary.distinct}</b><small>proizvoda</small></span><span><b>${summary.advertisedQty}</b><small>oglašava</small></span><span><b>${summary.physicalQty}</b><small>fizički</small></span></div><small>Zadnja predaja: ${formatDate(summary.lastHandoff,false)} · Izmjena: ${formatDate(summary.lastUpdate,false)}</small></article>`;}).join('')||emptyAdmin('Nema prodavača za odabrane filtre.'))+page.pagination;renderSellerProfile();}
-
-function renderSellerProfile(){const root=document.querySelector('[data-seller-profile]');if(!root)return;const seller=sellers.find((item)=>String(item.id)===String(activeSellerId));if(!seller){root.innerHTML=emptyAdmin('Odaberi prodavača ili dodaj novog.');return;}let tab=root.dataset.sellerTab||'overview';if(tab==='notifications')tab='overview';root.dataset.sellerTab=tab;const summary=sellerSummary(seller),labels={overview:'Pregled',listings:'Oglašava',physical:'Fizički kod njega',history:'Povijest'},tabs=Object.keys(labels).map((key)=>`<button type="button" data-seller-tab="${key}" class="${tab===key?'active':''}">${labels[key]}</button>`).join('');root.innerHTML=`<header class="seller-profile-header"><div><p class="eyebrow">Profil prodavača</p><h2>${escapeHTML(seller.fullName)}</h2><p>${escapeHTML([seller.phone,seller.contact].filter(Boolean).join(' · ')||'Bez kontakta')}</p></div><div class="seller-profile-actions"><button type="button" data-edit-seller="${escapeHTML(seller.id)}">Uredi</button><button type="button" data-open-seller-picker="listing">Dodaj u oglašavanje</button><button type="button" class="admin-primary-action" data-open-seller-picker="handoff">Fizička predaja</button></div></header><nav class="seller-tabs">${tabs}</nav><div class="seller-tab-content">${renderSellerTab(seller,tab,summary)}</div>`;}
-
-function renderSellerTab(seller,tab,summary){if(tab==='overview')return`<div class="seller-overview-grid">${metricCard('Različitih proizvoda',summary.distinct,'◈','Aktivno oglašava')}${metricCard('Ukupno oglašava',summary.advertisedQty,'▦','Komada po glavnom stanju')}${metricCard('Fizički kod njega',summary.physicalQty,'◉','Privremeno predano')}</div><div class="detail-block"><dl><div><dt>Status</dt><dd>${seller.status==='active'?'Aktivan':'Neaktivan'}</dd></div><div><dt>Početak suradnje</dt><dd>${formatDate(seller.startedAt,false)}</dd></div><div><dt>Napomena</dt><dd>${escapeHTML(seller.note||'Bez napomene')}</dd></div></dl></div>`;if(tab==='listings')return renderSellerListings(seller);if(tab==='physical')return renderSellerPhysical(seller);return renderSellerActivity(seller);}
-function renderSellerListings(seller){const listings=seller.listings.filter((item)=>item.status!=='removed').sort((a,b)=>new Date(b.updatedAt||b.addedAt)-new Date(a.updatedAt||a.addedAt));return listings.map((listing)=>{const product=products.find((item)=>String(item.id)===String(listing.productId));if(!product)return'';const warning=product.archived||product.stock<1?'<em class="seller-warning">Nedostupno / arhivirano</em>':'';return`<article class="seller-product-row" data-seller-listing="${escapeHTML(listing.productId)}">${sellerProductRow(product,`<small>Glavno stanje: ${product.stock} · Oglašava: ${listing.quantity} · ${escapeHTML(listing.status)}</small>${warning}`)}<div class="seller-row-actions"><input type="number" min="0" value="${listing.quantity}" data-seller-listing-quantity title="Količina"><button type="button" data-save-seller-listing>Spremi</button><button type="button" data-toggle-seller-listing>${listing.status==='paused'?'Aktiviraj':'Pauziraj'}</button><button type="button" class="danger" data-remove-seller-listing>Ukloni</button></div></article>`;}).join('')||emptyAdmin('Prodavač trenutačno ne oglašava nijedan proizvod.');}
-function renderSellerPhysical(seller){const physical=seller.physicalItems.filter((item)=>item.quantity>0);return physical.map((item)=>{const product=products.find((entry)=>String(entry.id)===String(item.productId));if(!product)return'';return`<article class="seller-product-row" data-seller-physical="${escapeHTML(item.productId)}">${sellerProductRow(product,`<small>Fizički kod prodavača: ${item.quantity} · Predano: ${formatDate(item.handedOffAt,false)}</small>`)}<div class="seller-row-actions"><button type="button" data-return-one-seller-physical>Vrati jedan</button><button type="button" data-return-all-seller-physical>Vrati sve</button></div></article>`;}).join('')||emptyAdmin('Kod prodavača nema fizički predanih proizvoda.');}
-function renderSellerActivity(seller){return seller.activities.map((item)=>{const product=products.find((entry)=>String(entry.id)===String(item.productId));return`<article class="history-row seller-history-row"><div><span class="row-label">Vrijeme</span><span class="row-text">${formatDate(item.createdAt)}</span></div><div><span class="row-label">Tip</span><span class="row-text">${escapeHTML(item.type)}</span></div><div><span class="row-label">Proizvod</span><span class="row-text">${product?`<a href="product.html?id=${escapeHTML(product.id)}" data-product-detail-link="${escapeHTML(product.id)}">${escapeHTML(product.name)}</a>`:'-'}</span></div><span class="history-values">${item.oldQuantity??'-'} → ${item.newQuantity??'-'}</span><span class="row-text">${escapeHTML(item.description)}</span></article>`;}).join('')||emptyAdmin('Povijest aktivnosti je prazna.');}
-
-function openSellerDialog(seller=null){const dialog=document.querySelector('[data-seller-dialog]'),form=dialog.querySelector('form');form.reset();form.elements.id.value=seller?.id||'';dialog.querySelector('[data-seller-dialog-title]').textContent=seller?'Uredi prodavača':'Novi prodavač';form.elements.fullName.value=seller?.fullName||'';form.elements.phone.value=seller?.phone||'';form.elements.contact.value=seller?.contact||'';form.elements.startedAt.value=(seller?.startedAt||new Date().toISOString()).slice(0,10);form.elements.status.value=seller?.status||'active';form.elements.note.value=seller?.note||'';dialog.showModal();}
-function openSellerProductPicker(mode){const seller=sellers.find((item)=>String(item.id)===String(activeSellerId));if(!seller){toast('Prvo odaberite prodavača.');return;}sellerPickerMode=mode;sellerPickerDraft=[];const dialog=document.querySelector('[data-seller-product-dialog]'),form=dialog.querySelector('form');form.reset();form.elements.sellerId.value=seller.id;form.elements.mode.value=mode;form.elements.handedOffAt.value=new Date().toISOString().slice(0,16);form.elements.handedOffAt.closest('label').hidden=mode!=='handoff';dialog.querySelector('[data-seller-product-title]').textContent=mode==='handoff'?'Fizička predaja proizvoda':'Dodaj proizvode u oglašavanje';renderSellerProductPicker();dialog.showModal();}
-function renderSellerProductPicker(){const form=document.querySelector('[data-seller-product-form]');if(!form)return;const query=(form.querySelector('[data-seller-product-search]')?.value||'').toLocaleLowerCase('hr'),selected=form.querySelector('[data-seller-product-selected]'),options=form.querySelector('[data-seller-product-options]'),available=products.filter((product)=>!product.archived&&(!query||[product.name,product.club,product.player,product.brand,product.version,product.productType,product.sizes?.join(' ')].join(' ').toLocaleLowerCase('hr').includes(query))).slice(0,24);selected.innerHTML=sellerPickerDraft.length?sellerPickerDraft.map((entry,index)=>{const product=products.find((item)=>String(item.id)===String(entry.productId));return product?`<div class="modern-multi-selected-card seller-selected-product" data-seller-draft-index="${index}"><img src="${escapeHTML(adminThumb(product))}" alt="" loading="lazy" decoding="async"><span class="modern-multi-copy"><strong>${escapeHTML(product.name)}</strong><small>${escapeHTML(productVariantLabel(product)||'-')}</small></span><input type="number" min="1" value="${entry.quantity}" data-seller-draft-quantity><button type="button" data-remove-seller-draft>×</button></div>`:'';}).join(''):'<span class="modern-multi-placeholder">Nema odabranih proizvoda</span>';options.innerHTML=available.map((product)=>{const picked=sellerPickerDraft.some((entry)=>String(entry.productId)===String(product.id));return`<button type="button" class="modern-multi-option ${picked?'selected':''}" data-seller-pick-product="${escapeHTML(product.id)}"><img src="${escapeHTML(adminThumb(product))}" alt="" loading="lazy" decoding="async"><span class="modern-multi-copy"><strong>${escapeHTML(product.name)}</strong><small>${escapeHTML(productKindLabel(product))} · ${escapeHTML(productVariantLabel(product)||'-')} · Stanje ${product.stock}</small></span><b>${picked?'✓':'+'}</b></button>`;}).join('')||'<p class="modern-multi-empty">Nema proizvoda za ovu pretragu.</p>';}
-async function syncSellersAfterProductChange(productId,options={}){try{const result=await syncSellerProductQuantity(productId,options);if(result?.sellers?.length&&options.showToast!==false)toast(`Prodavači ažurirani: ${result.sellers.join(', ')}`);return result;}catch(error){console.error('[DresHub Prodavači]',{service:'sellerService',table:'seller_listings',operation:'sinkronizacija nakon promjene stanja',productId,message:error.message,error});toast(`Prodavači nisu sinkronizirani: ${error.message}`);return null;}}
-function showSellerSaleAlertModal(results){const alerts=(results||[]).filter((item)=>item?.sellers?.length);if(!alerts.length)return;const dialog=document.querySelector('[data-seller-sale-alert-dialog]'),list=dialog.querySelector('[data-seller-sale-alert-list]'),allOut=alerts.some((item)=>Number(item.remainingQuantity||0)===0);dialog.querySelector('[data-seller-sale-alert-title]').textContent=allOut?'Proizvod više nije dostupan':'Potrebno je javiti prodavačima';list.innerHTML=alerts.map((item)=>{const product=products.find((entry)=>String(entry.id)===String(item.productId));const productName=product?.name||'Proizvod',variant=productVariantLabel(product||{})||product?.sizes?.join(', ')||'-',remaining=Number(item.remainingQuantity||0),sold=Number(item.soldQuantity||1),message=remaining===0?`Proizvod ${productName} više nije na stanju.`:`Prodan je ${sold} ${sold===1?'primjerak':'primjerka'} proizvoda ${productName}.`;return`<article class="seller-sale-alert-item">${product?`<img src="${escapeHTML(adminThumb(product))}" data-original-src="${escapeHTML(getProductMainImage(product))}" alt="${escapeHTML(productName)}" loading="lazy" decoding="async" onerror="this.onerror=null;this.src=this.dataset.originalSrc">`:''}<div><h3>${escapeHTML(productName)}</h3><p>${escapeHTML(variant)}</p><strong>${escapeHTML(message)}</strong><p>Novo stanje: ${remaining}.</p><p>Ovaj proizvod oglašavaju: ${escapeHTML(item.sellers.join(', '))}.</p><p>${remaining===0?'Javi im da uklone oglas.':'Javi im da ažuriraju količinu ili uklone oglas.'}</p></div></article>`;}).join('');dialog.showModal();}
-
-async function removeOtherProduct(product){const images=await getProductImages(product.id);for(const image of images)await deleteProductImage(product.id,image.id);await deleteProduct(product.id);}
-
-async function prefillNikeExample(){await openProductDialog(null,'sneaker');const form=document.querySelector('[data-product-form]');form.elements.name.value='Nike Air Force 1';form.elements.brand.value='Nike';form.elements.sizes.value='44';form.elements.costPrice.value='50';form.elements.price.value='80';form.elements.stock.value='3';form.elements.color.value='bijela';form.elements.condition.value='new';form.elements.genderCategory.value='unisex';form.elements.hasOriginalBox.checked=false;form.elements.description.value='Nove bijele Nike Air Force 1 tenisice.';toast('Podaci su pripremljeni. Dodajte priložene fotografije kroz polje Slike i spremite oglas.');}
-
-async function openProductDialog(product = null, requestedType = 'jersey') {
-  const dialog = document.querySelector('[data-product-dialog]');
-  const form = dialog.querySelector('form');
-  releaseImagePreviews(form); form.reset(); form.elements.id.value = product?.id || '';
+/** Otvara formu proizvoda. @param {Object|null} product Postojeći proizvod. @param {string} [requestedType='jersey'] Vrsta. @returns {Promise<void>} */
+async function openProductDialog(product=null,requestedType='jersey'){
+  const dialog=document.querySelector('[data-product-dialog]'),form=dialog.querySelector('form');
+  releaseImagePreviews(form);form.reset();form.elements.id.value=product?.id||'';
   const productType=product?.productType||requestedType;form.elements.productType.value=productType;
-  form.elements.sizes.placeholder=productType==='sneaker'?'npr. 42.5':productType==='hoodie'?'XS, S, M, L, XL ili XXL':'S, M, L';
   const isJersey=productType==='jersey';
+  form.elements.sizes.placeholder=productType==='sneaker'?'npr. 42.5':productType==='hoodie'?'XS, S, M, L, XL ili XXL':'S, M, L';
   ['club','player','version'].forEach((name)=>{const field=form.elements[name],label=field?.closest('label');if(label)label.hidden=!isJersey;if(field){field.required=isJersey;if(!isJersey)field.value='';}});
   form.querySelectorAll('.other-product-field').forEach((field)=>field.hidden=isJersey||field.classList.contains('sneaker-only')&&productType!=='sneaker');
   ['brand','color','condition','genderCategory'].forEach((name)=>{if(form.elements[name])form.elements[name].required=!isJersey;});
-  dialog.querySelector('[data-product-dialog-title]').textContent = product ? `Uredi ${productType==='sneaker'?'tenisice':productType==='hoodie'?'duks':'proizvod'}` : productType==='sneaker'?'Nove tenisice':productType==='hoodie'?'Novi duks':'Novi proizvod';
+  dialog.querySelector('[data-product-dialog-title]').textContent=product?`Uredi ${productType==='sneaker'?'tenisice':productType==='hoodie'?'duks':'proizvod'}`:productType==='sneaker'?'Nove tenisice':productType==='hoodie'?'Novi duks':'Novi proizvod';
   if(isJersey&&product?.version&&![...form.elements.version.options].some((option)=>option.value===product.version))form.elements.version.add(new Option(product.version,product.version));
-  if (product) ['name','club','player','type','version','costPrice','stock','badge','description'].forEach((key) => { if(form.elements[key]) form.elements[key].value = product[key] ?? ''; });
-  form.elements.price.value = product ? (product.oldPrice || product.price) : '';
-  form.elements.oldPrice.value = product?.oldPrice ? product.price : '';
-  form.elements.sizes.value = product?.sizes?.join(', ') || '';
+  if(product){['name','club','player','type','version','costPrice','stock','badge','description'].forEach((key)=>{if(form.elements[key])form.elements[key].value=product[key]??'';});}
+  form.elements.price.value=product?(product.oldPrice||product.price||''):'';
+  form.elements.oldPrice.value=product?.oldPrice?product.price:'';
+  form.elements.sizes.value=product?.sizes?.join(', ')||'';
   if(!isJersey){form.elements.brand.value=product?.brand||'';form.elements.color.value=product?.color||'';form.elements.condition.value=product?.condition||'new';form.elements.genderCategory.value=product?.genderCategory||'unisex';form.elements.hasOriginalBox.checked=Boolean(product?.hasOriginalBox);form.elements.costPrice.value=product?.costPrice||0;form.elements.badge.value=product?.badge||'NOVO';}
-  form.imageItems = [];
-  form.deletedImageIds = [];
-  if (product?.id) {
-    const storedImages = await getProductImages(product.id);
-    form.imageItems = storedImages.map((image,index)=>({kind:'existing',id:image.id,url:image.image_url,path:image.image_path,isMain:Boolean(image.is_main),order:Number(image.image_order??index)}));
+  form.imageItems=[];form.deletedImageIds=[];
+  if(product?.id){
+    const storedImages=await getProductImages(product.id);
+    form.imageItems=storedImages.map((image,index)=>({kind:'existing',id:image.id,url:image.image_url,path:image.image_path,isMain:Boolean(image.is_main),order:Number(image.image_order??index)}));
     if(form.imageItems.length&&!form.imageItems.some((image)=>image.isMain))form.imageItems[0].isMain=true;
   }
   renderImagePreview(form);
   dialog.showModal();
 }
 
-/** Prikazuje slike proizvoda i omogućuje izbor glavne slike. @param {Array<string>} images Slike. @returns {void} */
+/** Briše ostali proizvod zajedno sa slikama. @param {Object} product Proizvod. @returns {Promise<void>} */
+async function removeOtherProduct(product){
+  const images=await getProductImages(product.id);
+  for(const image of images)await deleteProductImage(product.id,image.id);
+  await deleteProduct(product.id);
+}
+
+/** Popunjava formu primjerom za Nike tenisice. @returns {Promise<void>} */
+async function prefillNikeExample(){
+  await openProductDialog(null,'sneaker');
+  const form=document.querySelector('[data-product-form]');
+  form.elements.name.value='Nike Air Force 1';
+  form.elements.brand.value='Nike';
+  form.elements.sizes.value='44';
+  form.elements.costPrice.value='50';
+  form.elements.price.value='80';
+  form.elements.stock.value='3';
+  form.elements.color.value='bijela';
+  form.elements.condition.value='new';
+  form.elements.genderCategory.value='unisex';
+  form.elements.hasOriginalBox.checked=false;
+  form.elements.description.value='Nove bijele Nike Air Force 1 tenisice.';
+  toast('Podaci su pripremljeni. Dodajte fotografije i spremite oglas.');
+}
+
+function renderOtherProducts(){const list=document.querySelector('[data-other-products-list]');if(!list)return;const query=(document.querySelector('[data-other-product-search]')?.value||'').toLocaleLowerCase('hr'),type=document.querySelector('[data-other-product-type]')?.value||'all',items=products.filter((product)=>['sneaker','hoodie'].includes(product.productType)&&(type==='all'||product.productType===type)&&`${product.name} ${product.brand} ${product.color}`.toLocaleLowerCase('hr').includes(query)),page=adminPageSlice('admin-other-products',items,renderOtherProducts);document.querySelector('[data-other-products-summary]').textContent=`${items.length} proizvoda`;list.innerHTML=(page.items.map((product)=>`<article class="admin-product" data-other-product="${escapeHTML(product.id)}"><img src="${escapeHTML(adminThumb(product))}" data-original-src="${escapeHTML(getProductMainImage(product))}" alt="${escapeHTML(product.name)}" loading="lazy" decoding="async" width="64" height="64" onerror="this.onerror=null;this.src=this.dataset.originalSrc"><div class="admin-product-info"><strong>${escapeHTML(product.name)}</strong><small>${product.productType==='sneaker'?'Tenisice':'Duks'} · ${escapeHTML(product.brand)} · ${escapeHTML(product.sizes.join(', '))}</small></div><span class="product-tag">${product.productType==='sneaker'?'TENISICE':'DUKS'}</span><div class="stock-stepper"><output>${product.stock}</output></div><div class="admin-product-price"><strong>${formatPrice(product.price)}</strong></div><div class="row-actions"><button class="sell-product-button" data-sell-product title="Prodaj proizvod" ${product.stock<1||product.archived?'disabled':''}>¤ Prodaj</button>${product.productType==='sneaker'?'<button data-duplicate-other title="Dupliciraj">⧉</button>':''}<button data-archive-other title="${product.archived?'Vrati':'Arhiviraj'}">${product.archived?'↥':'▣'}</button><button data-edit-other title="Uredi">✎</button><button class="danger" data-delete-other title="Obri\u0161i">×</button></div></article>`).join('')||emptyAdmin('Nema tenisica ili dukseva za odabrani prikaz.'))+page.pagination;}
+
+function sellerProductSubtitle(product){return product.productType==='jersey'?[product.player,product.version,product.sizes?.join(', ')].filter(Boolean).join(' · '):[product.productType==='sneaker'?'Tenisice':'Duks',product.brand,product.sizes?.join(', ')].filter(Boolean).join(' · ');}
+function sellerListingProductTypes(mode){return mode==='jersey'?['jersey']:['sneaker','hoodie'];}
+function sellerListingProductCard(product,extra=''){return`<div class="seller-product-mini"><img src="${escapeHTML(adminThumb(product))}" data-original-src="${escapeHTML(getProductMainImage(product))}" alt="${escapeHTML(product.name)}" loading="lazy" decoding="async" width="54" height="54" onerror="this.onerror=null;this.src=this.dataset.originalSrc"><span><strong>${escapeHTML(product.name)}</strong><small>${escapeHTML(sellerProductSubtitle(product)||'-')}</small>${extra}</span></div>`;}
+
+function renderSellers(){
+  const list=document.querySelector('[data-sellers-list]'),profile=document.querySelector('[data-seller-profile]');
+  if(!list||!profile)return;
+  if(activeSellerId&&!sellers.some((seller)=>String(seller.id)===String(activeSellerId)))activeSellerId=null;
+  if(!activeSellerId&&sellers[0])activeSellerId=sellers[0].id;
+  list.innerHTML=sellers.map((seller)=>`<article class="seller-card ${String(seller.id)===String(activeSellerId)?'active':''}" data-seller-card="${escapeHTML(seller.id)}"><header><div><h2>${escapeHTML(seller.name)}</h2><small>${seller.note?escapeHTML(seller.note):'Bez napomene'}</small></div></header></article>`).join('')||emptyAdmin('Još nema dodanih prodavača.');
+  const seller=sellers.find((item)=>String(item.id)===String(activeSellerId));
+  if(!seller){profile.innerHTML=emptyAdmin('Dodaj prvog prodavača za početak.');return;}
+  const listings=(seller.listings||[]).filter((item)=>Number(item.quantity)>0);
+  const physicalItems=(seller.physicalItems||[]).filter((item)=>Number(item.quantity)>0);
+  const listingRows=listings.map((listing)=>{
+    const product=products.find((item)=>String(item.id)===String(listing.productId));
+    if(!product)return'';
+    return`<article class="seller-product-row" data-seller-listing="${escapeHTML(product.id)}">${sellerListingProductCard(product,`<small>Oglašava: ${listing.quantity} · Skladište: ${product.stock}</small>`)}<div class="seller-row-actions"><button type="button" class="danger" data-remove-seller-listing>Ukloni</button></div></article>`;
+  }).join('');
+  const physicalRows=physicalItems.map((item)=>{
+    const product=products.find((entry)=>String(entry.id)===String(item.productId));
+    if(!product)return'';
+    return`<article class="seller-product-row" data-seller-physical="${escapeHTML(product.id)}">${sellerListingProductCard(product,`<small>Fizički kod prodavača: ${item.quantity} · Skladište: ${product.stock}</small>`)}<div class="seller-row-actions"><button type="button" data-return-one-seller-physical>Vrati jedan</button><button type="button" class="danger" data-return-all-seller-physical>Vrati sve</button></div></article>`;
+  }).join('');
+  profile.innerHTML=`<header class="seller-profile-header"><div><p class="eyebrow">Profil prodavača</p><h2>${escapeHTML(seller.name)}</h2><p>${seller.note?escapeHTML(seller.note):'Bez napomene'}</p></div><div class="seller-profile-actions"><button type="button" data-edit-seller="${escapeHTML(seller.id)}">Uredi</button><button type="button" data-open-seller-listings="jersey">Dodaj dresove</button><button type="button" data-open-seller-listings="other">Dodaj ostale proizvode</button><button type="button" data-open-seller-physical="jersey">Fizička predaja dresova</button><button type="button" data-open-seller-physical="other">Fizička predaja ostalih</button><button type="button" class="danger" data-delete-seller="${escapeHTML(seller.id)}">Obri\u0161i</button></div></header><div class="seller-overview-grid">${metricCard('Oglašava',listings.reduce((sum,item)=>sum+Number(item.quantity||0),0),'◈','Ukupno komada')}${metricCard('Različitih proizvoda',listings.length,'▦','U oglašavanju')}${metricCard('Fizički kod njega',physicalItems.reduce((sum,item)=>sum+Number(item.quantity||0),0),'◉','Privremeno predano')}</div><section class="detail-block"><h3>Oglašava</h3>${listingRows||emptyAdmin('Prodavač još ne oglašava nijedan proizvod.')}</section><section class="detail-block"><h3>Fizički kod njega</h3>${physicalRows||emptyAdmin('Kod prodavača još nema fizički predanih proizvoda.')}</section>`;
+}
+
+function openSellerDialog(seller=null){
+  const dialog=document.querySelector('[data-seller-dialog]'),form=dialog?.querySelector('form');
+  if(!dialog||!form)return;
+  form.reset();
+  form.elements.id.value=seller?.id||'';
+  form.elements.name.value=seller?.name||'';
+  form.elements.note.value=seller?.note||'';
+  dialog.querySelector('[data-seller-dialog-title]').textContent=seller?'Uredi prodavača':'Novi prodavač';
+  dialog.showModal();
+  setTimeout(()=>form.elements.name.focus(),50);
+}
+
+function openSellerListingDialog(mode,purpose='listing'){
+  const seller=sellers.find((item)=>String(item.id)===String(activeSellerId)),dialog=document.querySelector('[data-seller-listing-dialog]'),form=dialog?.querySelector('form');
+  if(!seller||!dialog||!form)return;
+  sellerListingMode=mode;
+  sellerPickerPurpose=purpose;
+  sellerListingDraft=[];
+  form.reset();
+  form.elements.sellerId.value=seller.id;
+  form.elements.mode.value=mode;
+  form.elements.purpose.value=purpose;
+  const isPhysical=purpose==='physical';
+  dialog.querySelector('[data-seller-listing-title]').textContent=isPhysical?(mode==='jersey'?'Fizička predaja dresova':'Fizička predaja ostalih proizvoda'):(mode==='jersey'?'Dodaj dresove u oglašavanje':'Dodaj ostale proizvode u oglašavanje');
+  dialog.querySelector('[data-seller-picker-help]').textContent=isPhysical?'Odabrani proizvodi bit će označeni kao fizički kod prodavača i automatski dodani u oglašavanje ako već nisu tamo.':'Klik na proizvod odabire ili uklanja proizvod. Količina je početno jednaka trenutnom stanju u skladištu.';
+  dialog.querySelector('[data-seller-listing-submit]').textContent=isPhysical?'Spremi fizičku predaju':'Spremi oglašavanje';
+  renderSellerListingPicker();
+  dialog.showModal();
+  setTimeout(()=>form.querySelector('[data-seller-listing-search]')?.focus(),50);
+}
+
+function renderSellerListingPicker(){
+  const form=document.querySelector('[data-seller-listing-form]');
+  if(!form)return;
+  const query=(form.querySelector('[data-seller-listing-search]')?.value||'').toLocaleLowerCase('hr'),types=sellerListingProductTypes(sellerListingMode),selected=form.querySelector('[data-seller-listing-selected]'),options=form.querySelector('[data-seller-listing-options]');
+  const available=products.filter((product)=>types.includes(product.productType)&&!product.archived&&Number(product.stock)>0&&(!query||[product.name,product.club,product.player,product.brand,product.version,product.sizes?.join(' ')].join(' ').toLocaleLowerCase('hr').includes(query))).slice(0,24);
+  selected.innerHTML=sellerListingDraft.length?sellerListingDraft.map((entry,index)=>{const product=products.find((item)=>String(item.id)===String(entry.productId));return product?`<div class="modern-multi-selected-card seller-selected-product" data-seller-listing-index="${index}">${sellerListingProductCard(product)}<input type="number" min="1" value="${entry.quantity}" data-seller-listing-quantity aria-label="Količina"><button type="button" data-remove-seller-listing-draft>×</button></div>`:'';}).join(''):'<span class="modern-multi-placeholder">Nema odabranih proizvoda</span>';
+  options.innerHTML=available.map((product)=>{const picked=sellerListingDraft.some((entry)=>String(entry.productId)===String(product.id));return`<button type="button" class="modern-multi-option ${picked?'selected':''}" data-pick-seller-listing="${escapeHTML(product.id)}"><img src="${escapeHTML(adminThumb(product))}" alt="" loading="lazy" decoding="async"><span class="modern-multi-copy"><strong>${escapeHTML(product.name)}</strong><small>${escapeHTML(sellerProductSubtitle(product)||'-')} · Skladište ${product.stock}</small></span><b>${picked?'✓':'+'}</b></button>`;}).join('')||'<p class="modern-multi-empty">Nema proizvoda za ovu pretragu.</p>';
+}
+
+async function syncSellerListingsAfterSaleSafe(productId,soldQuantity=1){
+  try{return await syncSellerListingsAfterSale(productId,soldQuantity);}
+  catch(error){console.error('[DresHub Prodavači]',error);toast(`Prodaja je spremljena, ali prodavači nisu ažurirani: ${error.message}`);return[];}
+}
+
+function buildSellerSaleAlert(product,soldQuantity,affectedSellers){
+  const sellersForProduct=(affectedSellers||[]).filter((seller)=>Number(seller.oldQuantity||0)>0);
+  if(!product||!sellersForProduct.length)return null;
+  const quantity=Math.max(1,Number(soldQuantity||1));
+  return {
+    productId:product.id,
+    name:product.name,
+    image:adminThumb(product)||getProductMainImage(product),
+    subtitle:sellerProductSubtitle(product)||product.sizes?.join(', ')||'',
+    soldQuantity:quantity,
+    newStock:Math.max(0,Number(product.stock||0)-quantity),
+    sellers:sellersForProduct.map((seller)=>seller.sellerName||'Prodava\u010d').filter(Boolean)
+  };
+}
+
+function showSellerSaleAlerts(alerts){
+  const items=(alerts||[]).filter(Boolean);
+  if(!items.length)return;
+  const dialog=document.querySelector('[data-seller-sale-alert-dialog]'),list=dialog?.querySelector('[data-seller-sale-alert-list]'),title=dialog?.querySelector('[data-seller-sale-alert-title]');
+  if(!dialog||!list)return;
+  const anySoldOut=items.some((item)=>Number(item.newStock)<=0);
+  if(title)title.textContent=items.length===1&&anySoldOut?'Proizvod vi\u0161e nije dostupan':'Potrebno je javiti prodava\u010dima';
+  list.innerHTML=items.map((item)=>{const sellers=[...new Set(item.sellers)].join(', ');return `<article class="seller-sale-alert-item"><img src="${escapeHTML(item.image)}" alt="${escapeHTML(item.name)}" loading="lazy" decoding="async"><div><h3>${escapeHTML(item.name)}</h3><p>${escapeHTML(item.subtitle||'-')}</p><strong>Prodan je ${item.soldQuantity} komad. Novo stanje: ${item.newStock}.</strong><p>Proizvod ogla\u0161avaju: ${escapeHTML(sellers)}.</p><p>${item.newStock>0?'Javi im da a\u017euriraju dostupnu koli\u010dinu.':'Javi im da uklone oglas jer proizvod vi\u0161e nije na stanju.'}</p></div></article>`;}).join('');
+  if(dialog.open)dialog.close();
+  dialog.showModal();
+}
+
+function bindSellers(){
+  document.addEventListener('click',async(event)=>{
+    if(event.target.closest('[data-open-seller]')){openSellerDialog();return;}
+    const card=event.target.closest('[data-seller-card]');
+    if(card){activeSellerId=card.dataset.sellerCard;renderSellers();return;}
+    const edit=event.target.closest('[data-edit-seller]');
+    if(edit){openSellerDialog(sellers.find((seller)=>String(seller.id)===String(edit.dataset.editSeller)));return;}
+    const openListings=event.target.closest('[data-open-seller-listings]');
+    if(openListings){openSellerListingDialog(openListings.dataset.openSellerListings);return;}
+    const openPhysical=event.target.closest('[data-open-seller-physical]');
+    if(openPhysical){openSellerListingDialog(openPhysical.dataset.openSellerPhysical,'physical');return;}
+    const removeListing=event.target.closest('[data-remove-seller-listing]');
+    if(removeListing&&activeSellerId){
+      const row=removeListing.closest('[data-seller-listing]'),product=products.find((item)=>String(item.id)===String(row?.dataset.sellerListing));
+      if(!row||!product||!confirm(`Ukloniti „${product.name}” iz oglašavanja ovog prodavača?`))return;
+      removeListing.disabled=true;
+      try{await removeSellerListing(activeSellerId,product.id);toast('Proizvod je uklonjen iz oglašavanja.');await refreshAll();}
+      catch(error){console.error('[DresHub Prodavači]',error);toast(`Uklanjanje nije uspjelo: ${error.message}`);}
+      finally{removeListing.disabled=false;}
+      return;
+    }
+    const returnPhysical=event.target.closest('[data-return-one-seller-physical],[data-return-all-seller-physical]');
+    if(returnPhysical&&activeSellerId){
+      const row=returnPhysical.closest('[data-seller-physical]'),product=products.find((item)=>String(item.id)===String(row?.dataset.sellerPhysical));
+      if(!row||!product)return;
+      const all=returnPhysical.matches('[data-return-all-seller-physical]');
+      if(!confirm(all?`Vratiti sve fizičke komade proizvoda „${product.name}”?`:`Vratiti jedan fizički komad proizvoda „${product.name}”?`))return;
+      returnPhysical.disabled=true;
+      try{
+        if(all)await returnAllSellerPhysicalItems(activeSellerId,product.id);
+        else await returnOneSellerPhysicalItem(activeSellerId,product.id);
+        toast(all?'Svi fizički komadi su vraćeni.':'Vraćen je jedan fizički komad.');
+        await refreshAll();
+      }catch(error){console.error('[DresHub Prodavači]',error);toast(`Povrat nije uspio: ${error.message}`);}
+      finally{returnPhysical.disabled=false;}
+      return;
+    }
+    const remove=event.target.closest('[data-delete-seller]');
+    if(remove){
+      const seller=sellers.find((item)=>String(item.id)===String(remove.dataset.deleteSeller));
+      if(!seller||!confirm(`Obrisati prodavača "${seller.name}"?`))return;
+      remove.disabled=true;
+      try{
+        await deleteSeller(seller.id);
+        if(String(activeSellerId)===String(seller.id))activeSellerId=null;
+        toast('Prodavač je obrisan.');
+        await refreshAll();
+      }catch(error){console.error('[DresHub Prodavači]',error);toast(`Prodavač nije obrisan: ${error.message}`);}
+      finally{remove.disabled=false;}
+    }
+  });
+}
+
+/** Renderira pregled slika proizvoda. @param {HTMLFormElement} form Forma. @returns {void} */
 function renderImagePreview(form) {
   const images=form.imageItems||[],preview=form.querySelector('[data-image-preview]');
   if(!images.length){preview.innerHTML='<div class="image-preview-empty">Proizvod trenutačno nema slika. Bit će prikazan placeholder.</div>';return;}
-  preview.innerHTML=images.map((image,index)=>`<article class="image-editor-card ${image.isMain?'active':''}" data-image-key="${escapeHTML(image.id??image.key)}" draggable="true"><div class="image-editor-visual"><img src="${escapeHTML(image.previewUrl||image.url)}" alt="Slika proizvoda ${index+1}">${image.isMain?'<strong>Glavna slika</strong>':''}${image.replacementFile?'<small>Zamjena odabrana</small>':''}</div><div class="image-editor-actions"><button type="button" data-image-main ${image.isMain?'disabled':''}>${image.isMain?'Glavna':'Postavi glavnu'}</button><button type="button" data-image-replace>Zamijeni</button><button type="button" data-image-delete class="danger">Obriši</button><div><button type="button" data-image-left ${index===0?'disabled':''} aria-label="Pomakni lijevo">←</button><span>${index+1}</span><button type="button" data-image-right ${index===images.length-1?'disabled':''} aria-label="Pomakni desno">→</button></div></div></article>`).join('');
+  preview.innerHTML=images.map((image,index)=>`<article class="image-editor-card ${image.isMain?'active':''}" data-image-key="${escapeHTML(image.id??image.key)}" draggable="true"><div class="image-editor-visual"><img src="${escapeHTML(image.previewUrl||image.url)}" alt="Slika proizvoda ${index+1}">${image.isMain?'<strong>Glavna slika</strong>':''}${image.replacementFile?'<small>Zamjena odabrana</small>':''}</div><div class="image-editor-actions"><button type="button" data-image-main ${image.isMain?'disabled':''}>${image.isMain?'Glavna':'Postavi glavnu'}</button><button type="button" data-image-replace>Zamijeni</button><button type="button" data-image-delete class="danger">Obri\u0161i</button><div><button type="button" data-image-left ${index===0?'disabled':''} aria-label="Pomakni lijevo">←</button><span>${index+1}</span><button type="button" data-image-right ${index===images.length-1?'disabled':''} aria-label="Pomakni desno">→</button></div></div></article>`).join('');
 }
 
 /** Prikazuje rezervacije odabranog statusa. @returns {void} */
@@ -275,13 +429,30 @@ function renderFinance() {
 }
 
 /** @param {Array<Object>} transactions Transakcije. @returns {string} */
-function transactionRows(transactions) { return transactions.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).map(item=>{const profit=(item.items||[]).reduce((sum,sale)=>sum+(Number(sale.price)-Number(sale.costPrice))*Number(sale.quantity||1),0),sales=(item.items||[]).slice(0,5),hidden=(item.items||[]).length-sales.length;return`<article class="transaction-row ${item.voided?'voided-transaction':''}" data-transaction-id="${escapeHTML(item.id)}"><div><span class="row-label">Datum</span><span class="row-text">${formatDate(item.date)}</span></div><div><span class="row-label">Opis</span><span class="row-text">${escapeHTML(item.description)}</span>${item.voided?'<span class="voided-badge">Poništeno</span>':''}</div><div><span class="row-label">Plaćanje / kanal</span><span class="row-text">${escapeHTML(item.paymentMethod||'-')} · ${escapeHTML(item.salesChannel||'-')}</span></div><div><span class="row-label">Izvor</span><span class="row-text">${escapeHTML(item.source||'Ručni unos')}</span></div><strong class="transaction-amount ${item.amount>=0&&!negativeTypes.has(item.type)?'positive':'negative'}">${formatPrice(item.amount)}</strong>${item.items?.length?`<div class="transaction-sale-items"><strong>Prodani proizvodi · zarada ${formatPrice(profit)}</strong>${sales.map((sale)=>`<a href="product.html?id=${escapeHTML(sale.productId)}" data-product-detail-link="${escapeHTML(sale.productId)}"><span>${escapeHTML(sale.name)} · ${escapeHTML(sale.player||'-')} · ${escapeHTML(sale.size||'-')}<small>Kupnja: ${formatPrice(sale.costPrice)} · Prodaja: ${formatPrice(sale.price)} · Zarada: ${formatPrice(sale.price-sale.costPrice)}</small></span><b>${formatPrice(sale.price)}</b></a>`).join('')}${hidden?`<small>+ još ${hidden} proizvoda — otvori detalje transakcije za cijeli popis.</small>`:''}${!item.voided?`<button type="button" class="danger" data-void-sale="${escapeHTML(item.id)}">Poništi prodaju</button>`:''}</div>`:''}</article>`;}).join('')||emptyAdmin('Nema transakcija za odabrane filtre.'); }
+function transactionRows(transactions) {
+  return transactions.slice().sort((a,b)=>new Date(b.date)-new Date(a.date)).map((item)=>{
+    const saleItems = item.items || [];
+    const profit = saleItems.reduce((sum,sale)=>sum+(Number(sale.price)-Number(sale.costPrice))*Number(sale.quantity||1),0);
+    const shownSales = saleItems.slice(0,5);
+    const hidden = saleItems.length - shownSales.length;
+    const isSale = item.type === 'Prodaja' || Boolean(saleItems.length);
+    const actionButtons = item.voided
+      ? ''
+      : isSale
+        ? `<button type="button" data-edit-transaction="${escapeHTML(item.id)}">Uredi prodaju</button><button type="button" class="danger" data-void-sale="${escapeHTML(item.id)}">Poni\u0161ti prodaju</button>`
+        : `<button type="button" data-edit-transaction="${escapeHTML(item.id)}">Uredi</button><button type="button" class="danger" data-delete-transaction="${escapeHTML(item.id)}">Obri\u0161i</button>`;
+    const saleList = saleItems.length
+      ? `<div class="transaction-sale-items"><strong>Prodani proizvodi \u00b7 zarada ${formatPrice(profit)}</strong>${shownSales.map((sale)=>`<a href="product.html?id=${escapeHTML(sale.productId)}" data-product-detail-link="${escapeHTML(sale.productId)}"><span>${escapeHTML(sale.name)} \u00b7 ${escapeHTML(sale.player||'-')} \u00b7 ${escapeHTML(sale.size||'-')} \u00b7 ${Number(sale.quantity||1)} kom<small>Kupnja: ${formatPrice(sale.costPrice)} \u00b7 Prodaja/kom: ${formatPrice(sale.price)} \u00b7 Zarada: ${formatPrice((sale.price-sale.costPrice)*Number(sale.quantity||1))}</small></span><b>${formatPrice(Number(sale.price)*Number(sale.quantity||1))}</b></a>`).join('')}${hidden ? `<small>+ jo\u0161 ${hidden} proizvoda \u2014 otvori detalje transakcije za cijeli popis.</small>` : ''}</div>`
+      : '';
+    return `<article class="transaction-row ${item.voided?'voided-transaction':''}" data-transaction-id="${escapeHTML(item.id)}"><div><span class="row-label">Datum</span><span class="row-text">${formatDate(item.date)}</span></div><div><span class="row-label">Opis</span><span class="row-text">${escapeHTML(item.description)}</span>${item.voided?'<span class="voided-badge">Poni\u0161teno</span>':''}</div><div><span class="row-label">Pla\u0107anje / kanal</span><span class="row-text">${escapeHTML(item.paymentMethod||'-')} \u00b7 ${escapeHTML(item.salesChannel||'-')}</span></div><div><span class="row-label">Izvor</span><span class="row-text">${escapeHTML(item.source||'Ru\u010dni unos')}</span></div><strong class="transaction-amount ${item.amount>=0&&!negativeTypes.has(item.type)?'positive':'negative'}">${formatPrice(item.amount)}</strong>${saleList}<div class="transaction-actions">${actionButtons}</div></article>`;
+  }).join('') || emptyAdmin('Nema transakcija za odabrane filtre.');
+}
 
 /** Prikazuje bilješke. @returns {void} */
 function renderNotes() {
   const status=document.querySelector('[data-note-status]')?.value||'all', priority=document.querySelector('[data-note-priority]')?.value||'all';
   const notes=getCollection('notes').filter(n=>(status==='all'||n.status===status)&&(priority==='all'||n.priority===priority)).sort((a,b)=>Number(b.pinned)-Number(a.pinned)||new Date(b.createdAt)-new Date(a.createdAt)),page=adminPageSlice('admin-notes',notes,()=>{renderNotes();renderNoteProductLinks();});
-  document.querySelector('[data-notes-list]').innerHTML=(page.items.map(note=>{const id=escapeHTML(String(note.id));return`<article class="note-card ${note.pinned?'pinned':''}" data-note="${id}" data-id="${id}"><header><div><p class="eyebrow">${escapeHTML(note.type)}</p><h2>${note.pinned?'◆ ':''}${escapeHTML(note.title)}</h2></div><span class="status-pill">${escapeHTML(note.status)}</span></header><p>${escapeHTML(note.description||'Bez opisa')}</p><div class="note-meta"><span class="priority-${note.priority}">${escapeHTML(note.priority)}</span>${(note.tags||[]).map(tag=>`<span>#${escapeHTML(tag)}</span>`).join('')}</div><time>${note.dueDate?`Rok: ${formatDate(note.dueDate,false)}`:'Bez roka'}</time><div class="card-actions"><button type="button" data-edit-note data-id="${id}">Uredi</button>${note.status!=='Završena'?`<button type="button" data-complete-note data-id="${id}">Završi</button>`:''}<button type="button" data-archive-note data-id="${id}">Arhiviraj</button><button type="button" data-delete-note data-id="${id}">Obriši</button></div></article>`;}).join('')||emptyAdmin('Nema bilješki za odabrane filtre.'))+page.pagination;
+  document.querySelector('[data-notes-list]').innerHTML=(page.items.map(note=>{const id=escapeHTML(String(note.id));return`<article class="note-card ${note.pinned?'pinned':''}" data-note="${id}" data-id="${id}"><header><div><p class="eyebrow">${escapeHTML(note.type)}</p><h2>${note.pinned?'◆ ':''}${escapeHTML(note.title)}</h2></div><span class="status-pill">${escapeHTML(note.status)}</span></header><p>${escapeHTML(note.description||'Bez opisa')}</p><div class="note-meta"><span class="priority-${note.priority}">${escapeHTML(note.priority)}</span>${(note.tags||[]).map(tag=>`<span>#${escapeHTML(tag)}</span>`).join('')}</div><time>${note.dueDate?`Rok: ${formatDate(note.dueDate,false)}`:'Bez roka'}</time><div class="card-actions"><button type="button" data-edit-note data-id="${id}">Uredi</button>${note.status!=='Završena'?`<button type="button" data-complete-note data-id="${id}">Završi</button>`:''}<button type="button" data-archive-note data-id="${id}">Arhiviraj</button><button type="button" data-delete-note data-id="${id}">Obri\u0161i</button></div></article>`;}).join('')||emptyAdmin('Nema bilješki za odabrane filtre.'))+page.pagination;
 }
 
 /** Otvara formu bilješke. @param {Object|null} note Bilješka. @returns {void} */
@@ -338,7 +509,6 @@ function releaseImagePreviews(form){(form.imageItems||[]).forEach((image)=>{if(S
 async function closeOrder(order) {
   if(!confirm(`Zaključiti narudžbu „${order.title}”? Nakon toga se više ne može uređivati.`))return;
   await finalizePurchaseOrder(order.id);
-  for(const item of order.items||[])if(item.productId)await syncSellersAfterProductChange(item.productId,{reason:'purchase_order_sync',notify:true});
   toast('Narudžba je zaključena i zaliha je ažurirana.');await refreshAll();
 }
 
@@ -353,8 +523,8 @@ function bindNavigation() {
     if(event.target.closest('[data-open-product]'))openProductDialog();
     if(event.target.closest('[data-open-order]'))openOrderDialog();
     if(event.target.closest('[data-open-note]'))openNoteDialog();
-    if(event.target.closest('[data-open-transaction]')){const form=document.querySelector('[data-transaction-form]');form.reset();saleDraft=[];form.elements.date.value=new Date().toISOString().slice(0,16);updateTransactionFormMode();document.querySelector('[data-transaction-dialog]').showModal();}
-    if(event.target.closest('[data-quick-sale]')){const form=document.querySelector('[data-transaction-form]');form.reset();saleDraft=[];form.elements.type.value='Prodaja dresova';form.elements.date.value=new Date().toISOString().slice(0,16);updateTransactionFormMode();document.querySelector('[data-transaction-dialog]').showModal();setTimeout(()=>form.querySelector('[data-sale-search]').focus(),50);}
+    if(event.target.closest('[data-open-transaction]')){openTransactionDialog();}
+    if(event.target.closest('[data-quick-sale]')){openTransactionDialog(null,true);}
     if(event.target.closest('[data-close-dialog]'))event.target.closest('dialog').close();
     const productLink=event.target.closest('[data-product-detail-link]');if(productLink){event.preventDefault();openLinkedProductDetail(productLink.dataset.productDetailLink);}
     const noteLink=event.target.closest('[data-note-detail-link]');if(noteLink){event.preventDefault();openLinkedNoteDetail(noteLink.dataset.noteDetailLink);}
@@ -368,8 +538,8 @@ function bindProducts() {
   document.querySelector('[data-other-product-search]')?.addEventListener('input',()=>debounceAdmin('admin-other-product-search',renderOtherProducts));document.querySelector('[data-other-product-type]')?.addEventListener('change',renderOtherProducts);
   document.querySelectorAll('[data-open-other]').forEach((button)=>button.addEventListener('click',()=>openProductDialog(null,button.dataset.openOther)));
   document.querySelector('[data-prefill-nike]')?.addEventListener('click',prefillNikeExample);
-  document.querySelector('[data-other-products-list]')?.addEventListener('click',async(event)=>{const row=event.target.closest('[data-other-product]');if(!row)return;const product=products.find((item)=>String(item.id)===String(row.dataset.otherProduct));if(!product)return;if(event.target.closest('[data-edit-other]'))await openProductDialog(product,product.productType);else if(event.target.closest('[data-archive-other]')){await setProductArchived(product.id,!product.archived);await syncSellersAfterProductChange(product.id,{reason:'archive_sync',notify:true});toast(product.archived?'Proizvod je vraćen.':'Proizvod je arhiviran.');await refreshAll();}else if(event.target.closest('[data-delete-other]')&&confirm(`Trajno obrisati „${product.name}”?`)){await removeOtherProduct(product);toast('Proizvod je obrisan.');await refreshAll();}else if(event.target.closest('[data-duplicate-other]')){try{const copy=await duplicateSneakerProduct(product.id);toast('Oglas i slike su duplicirani.');await refreshAll();await openProductDialog(copy,'sneaker');}catch(error){toast(`Dupliciranje nije uspjelo: ${error.message}`);}}else if(!event.target.closest('button,input,select,a'))openLinkedProductDetail(product.id);});
-  document.querySelector('[data-products-list]').addEventListener('click',async(event)=>{const row=event.target.closest('[data-admin-product]');if(!row)return;const id=row.dataset.adminProduct,product=products.find(p=>String(p.id)===String(id));if(!product)return;if(event.target.closest('[data-stock]')){await adjustProductStock(id,Number(event.target.closest('[data-stock]').dataset.stock));await syncSellersAfterProductChange(id,{reason:'stock_sync',notify:true});await refreshAll();}else if(event.target.closest('[data-edit-product]'))openProductDialog(product);else if(event.target.closest('[data-archive-product]')){const willArchive=!product.archived;await setProductArchived(id,willArchive);await syncSellersAfterProductChange(id,{reason:'archive_sync',notify:true});toast(willArchive?'Proizvod je arhiviran.':'Proizvod je vraćen.');await refreshAll();}else if(event.target.closest('[data-delete-product]')&&confirm(`Trajno obrisati „${product.name}”?`)){await deleteProduct(id);toast('Proizvod je obrisan.');await refreshAll();}else if(!event.target.closest('button,input,select,a'))openLinkedProductDetail(product.id);});
+  document.querySelector('[data-other-products-list]')?.addEventListener('click',async(event)=>{const row=event.target.closest('[data-other-product]');if(!row)return;const product=products.find((item)=>String(item.id)===String(row.dataset.otherProduct));if(!product)return;if(event.target.closest('[data-edit-other]'))await openProductDialog(product,product.productType);else if(event.target.closest('[data-archive-other]')){await setProductArchived(product.id,!product.archived);toast(product.archived?'Proizvod je vraćen.':'Proizvod je arhiviran.');await refreshAll();}else if(event.target.closest('[data-delete-other]')&&confirm(`Trajno obrisati „${product.name}”?`)){await removeOtherProduct(product);toast('Proizvod je obrisan.');await refreshAll();}else if(event.target.closest('[data-duplicate-other]')){try{const copy=await duplicateSneakerProduct(product.id);toast('Oglas i slike su duplicirani.');await refreshAll();await openProductDialog(copy,'sneaker');}catch(error){toast(`Dupliciranje nije uspjelo: ${error.message}`);}}else if(!event.target.closest('button,input,select,a'))openLinkedProductDetail(product.id);});
+  document.querySelector('[data-products-list]').addEventListener('click',async(event)=>{const row=event.target.closest('[data-admin-product]');if(!row)return;const id=row.dataset.adminProduct,product=products.find(p=>String(p.id)===String(id));if(!product)return;if(event.target.closest('[data-stock]')){await adjustProductStock(id,Number(event.target.closest('[data-stock]').dataset.stock));await refreshAll();}else if(event.target.closest('[data-edit-product]'))openProductDialog(product);else if(event.target.closest('[data-archive-product]')){const willArchive=!product.archived;await setProductArchived(id,willArchive);toast(willArchive?'Proizvod je arhiviran.':'Proizvod je vraćen.');await refreshAll();}else if(event.target.closest('[data-delete-product]')&&confirm(`Trajno obrisati „${product.name}”?`)){await deleteProduct(id);toast('Proizvod je obrisan.');await refreshAll();}else if(!event.target.closest('button,input,select,a'))openLinkedProductDetail(product.id);});
   document.addEventListener('click',async(event)=>{const button=event.target.closest('[data-duplicate-product]');if(!button)return;const row=button.closest('[data-admin-product]'),product=products.find((item)=>String(item.id)===String(row?.dataset.adminProduct));if(!product)return;button.disabled=true;try{const copy=await duplicateJerseyProduct(product.id);toast('Dres i sve slike su duplicirani.');await refreshAll();await openProductDialog(copy,'jersey');}catch(error){console.error('[DresHub Admin] Dupliciranje dresa nije uspjelo.',error);toast(`Dupliciranje dresa nije uspjelo: ${error.message}`);}finally{button.disabled=false;}});
   document.addEventListener('click',(event)=>{const button=event.target.closest('[data-sell-product]');if(!button)return;event.preventDefault();event.stopPropagation();const row=button.closest('[data-admin-product],[data-other-product]'),id=row?.dataset.adminProduct||row?.dataset.otherProduct,product=products.find((item)=>String(item.id)===String(id));openLiveSaleDialog(product);});
   const form=document.querySelector('[data-product-form]');
@@ -402,7 +572,6 @@ function bindProducts() {
         console.error('[DresHub Admin] Proizvod je spremljen, ali spremanje slika nije uspjelo.',error);
       }
       releaseImagePreviews(form);
-      await syncSellersAfterProductChange(persisted.id,{reason:'product_edit_sync',notify:Boolean(existing&&Number(existing.stock)!==Number(persisted.stock))});
       document.querySelector('[data-product-dialog]').close();
       toast(imageWarning?'Proizvod je spremljen, ali slike nisu učitane. Provjerite Storage postavke.':'Proizvod je spremljen.');
       await refreshAll();
@@ -437,10 +606,151 @@ function bindOrders() {
 function openLiveSaleDialog(product){if(!product||product.stock<1||product.archived){toast('Proizvod nije aktivan ili nije na stanju.');return;}const dialog=document.querySelector('[data-live-sale-dialog]'),form=dialog.querySelector('form');form.reset();form.elements.productId.value=product.id;form.elements.price.value=Number(product.price||0).toFixed(2);form.elements.note.value='Prodano';dialog.querySelector('[data-live-sale-product]').innerHTML=`<strong>${escapeHTML(product.name)}</strong><small>${escapeHTML(product.club||product.brand||product.productType)} · ${escapeHTML(product.player||product.color||'-')} · ${escapeHTML(product.version||product.condition||'-')} · ${escapeHTML(product.sizes.join(', '))}</small><span>Na stanju: ${product.stock}</span>`;dialog.showModal();}
 
 /** Prikazuje izbor više dresova i njihove cijene. @returns {void} */
-function renderSaleBuilder(){const form=document.querySelector('[data-transaction-form]'),tokens=(form.querySelector('[data-sale-search]')?.value||'').toLocaleLowerCase('hr').trim().split(/\s+/).filter(Boolean),available=products.filter((product)=>{const haystack=`${product.name} ${product.club} ${product.player} ${product.brand} ${product.color} ${product.version} ${product.productType} ${product.sizes.join(' ')}`.toLocaleLowerCase('hr');return !product.archived&&product.stock>0&&tokens.every((token)=>haystack.includes(token));});form.querySelector('[data-sale-options]').innerHTML=available.map((product)=>`<button type="button" data-add-sale-product="${escapeHTML(product.id)}" ${saleDraft.some((item)=>String(item.productId)===String(product.id))?'disabled':''}><span>${escapeHTML(product.club||product.brand||product.name)} · ${escapeHTML(product.player||product.name)} · ${escapeHTML(product.sizes.join(', '))}</span><b>+ Dodaj</b></button>`).join('')||'<p>Nema dostupnih proizvoda.</p>';form.querySelector('[data-sale-items]').innerHTML=saleDraft.map((item,index)=>`<div class="sale-selected-row" data-sale-index="${index}"><a href="product.html?id=${escapeHTML(item.productId)}" data-product-detail-link="${escapeHTML(item.productId)}">${escapeHTML(item.name)}</a><input type="number" min="0" step="0.01" value="${Number(item.price).toFixed(2)}" data-sale-price aria-label="Prodajna cijena"><button type="button" data-remove-sale aria-label="Ukloni">×</button></div>`).join('');form.elements.amount.value=saleDraft.reduce((sum,item)=>sum+Number(item.price||0),0).toFixed(2);form.elements.description.value=saleDraft.length?`Prodaja – ${saleDraft.length} ${saleDraft.length===1?'proizvod':'proizvoda'}`:'';}
+function saleItemLabel(product){
+  const size=Array.isArray(product?.sizes)?product.sizes.join(', '):(product?.size||'');
+  return [product?.name,product?.player||product?.brand||product?.color,size].filter(Boolean).join(' &middot; ');
+}
+
+/** Maksimalna dostupna koli?ina za stavku prodaje, uzimaju?i u obzir originalnu koli?inu kod ure?ivanja. @param {string} productId ID proizvoda. @returns {number} */
+function saleDraftLimit(productId){
+  const product=products.find((item)=>String(item.id)===String(productId));
+  return Number(product?.stock||0)+Number(originalSaleQuantities.get(String(productId))||0);
+}
+
+/** Vra?a kupovnu vrijednost stavke prodaje. @param {Object} item Stavka. @returns {number} */
+function saleDraftCost(item){
+  const product=products.find((entry)=>String(entry.id)===String(item.productId));
+  return Number(item.costPrice ?? product?.costPrice ?? 0);
+}
+
+/** Ra?una sa?etak prodaje. @returns {{amount:number,cost:number,profit:number,quantity:number,distinct:number}} */
+function saleDraftTotals(){
+  return saleDraft.reduce((totals,item)=>{
+    const quantity=Math.max(1,Number(item.quantity||1));
+    const price=Number(item.price||0);
+    totals.amount+=price*quantity;
+    totals.cost+=saleDraftCost(item)*quantity;
+    totals.quantity+=quantity;
+    totals.distinct+=1;
+    return totals;
+  },{amount:0,cost:0,profit:0,quantity:0,distinct:0});
+}
+
+/** Osvje?ava samo financijski sa?etak bez ponovnog renderiranja inputa. @param {HTMLFormElement} form Forma. @returns {void} */
+function updateSaleSummaryFields(form){
+  const totals=saleDraftTotals();
+  totals.profit=totals.amount-totals.cost;
+  form.elements.amount.value=totals.amount.toFixed(2);
+  form.querySelector('[data-sale-count]').textContent=`${totals.distinct} proizvoda - ${totals.quantity} kom`;
+  form.querySelector('[data-sale-total]').textContent=formatPrice(totals.amount);
+  form.querySelector('[data-sale-cost]').textContent=formatPrice(totals.cost);
+  form.querySelector('[data-sale-profit]').textContent=formatPrice(totals.profit);
+  const saleDescription=form.querySelector('[data-sale-description]');
+  if(saleDescription&&!saleDescription.value.trim())saleDescription.value=totals.quantity?`Prodaja - ${totals.distinct} razlicita proizvoda - ${totals.quantity} komada`:'';
+}
+
+/** Dodaje proizvod u zajedni?ki builder prodaje. @param {Object} product Proizvod. @returns {boolean} */
+function addSaleProductToDraft(product){
+  if(!product)return false;
+  const limit=saleDraftLimit(product.id);
+  const existing=saleDraft.find((item)=>String(item.productId)===String(product.id));
+  if(existing){
+    if(Number(existing.quantity||1)>=limit){toast('Nema dovoljno komada na stanju za ovaj proizvod.');return false;}
+    existing.quantity=Number(existing.quantity||1)+1;
+    return true;
+  }
+  if(limit<1){toast('Proizvod vise nije na stanju.');return false;}
+  saleDraft.push({productId:product.id,name:product.name,player:product.player||'',size:Array.isArray(product.sizes)?product.sizes.join(', '):(product.size||''),price:Number(product.price||0),costPrice:Number(product.costPrice||0),quantity:1});
+  return true;
+}
+
+function openTransactionDialog(transaction=null,forceSale=false){
+  const dialog=document.querySelector('[data-transaction-dialog]'),form=document.querySelector('[data-transaction-form]');
+  if(!dialog||!form)return;
+  form.reset();
+  editingTransactionId=transaction?.id||null;
+  saleDraft=[];
+  originalSaleQuantities=new Map();
+  const isSale=forceSale||transaction?.type==='Prodaja'||transaction?.items?.length;
+  form.elements.type.value=isSale?'Prodaja dresova':(transaction?.type||'Prodaja');
+  form.elements.amount.value=Number(transaction?.amount||0).toFixed(2);
+  const saleDescription=form.querySelector('[data-sale-description]');
+  const manualDescription=form.querySelector('[data-manual-description]');
+  if(saleDescription)saleDescription.value=transaction?.description||'';
+  if(manualDescription)manualDescription.value=transaction?.description||'';
+  form.elements.date.value=transaction?.date?new Date(transaction.date).toISOString().slice(0,16):new Date().toISOString().slice(0,16);
+  if(form.elements.paymentMethod)form.elements.paymentMethod.value=transaction?.paymentMethod||'gotovina';
+  if(form.elements.salesChannel)form.elements.salesChannel.value=transaction?.salesChannel||'u\u017eivo';
+  if(isSale&&transaction?.items?.length){
+    saleDraft=transaction.items.map((item)=>{
+      const product=products.find((entry)=>String(entry.id)===String(item.productId));
+      const quantity=Math.max(1,Number(item.quantity||1));
+      originalSaleQuantities.set(String(item.productId),quantity);
+      return {productId:item.productId,name:item.name||product?.name||'Proizvod',player:item.player||product?.player||'',size:item.size||(Array.isArray(product?.sizes)?product.sizes.join(', '):''),price:Number(item.price||product?.price||0),costPrice:Number(item.costPrice??product?.costPrice??0),quantity};
+    });
+  }
+  dialog.querySelector('h2').textContent=editingTransactionId?'Uredi transakciju':'Nova transakcija';
+  dialog.querySelector('[type="submit"]').textContent=editingTransactionId?'Spremi izmjene':'Spremi transakciju';
+  updateTransactionFormMode();
+  dialog.showModal();
+  if(isSale)setTimeout(()=>form.querySelector('[data-sale-search]')?.focus(),80);
+}
+
+function renderSaleBuilder(){
+  const form=document.querySelector('[data-transaction-form]');
+  if(!form)return;
+  const search=form.querySelector('[data-sale-search]');
+  const tokens=(search?.value||'').toLocaleLowerCase('hr').trim().split(/\s+/).filter(Boolean);
+  const available=products.filter((product)=>{
+    const sizeText=Array.isArray(product.sizes)?product.sizes.join(' '):(product.size||'');
+    const haystack=`${product.name||''} ${product.club||''} ${product.player||''} ${product.brand||''} ${product.color||''} ${product.version||''} ${product.productType||''} ${sizeText}`.toLocaleLowerCase('hr');
+    return !product.archived&&saleDraftLimit(product.id)>0&&tokens.every((token)=>haystack.includes(token));
+  }).slice(0,40);
+  const options=form.querySelector('[data-sale-options]');
+  if(options)options.innerHTML=available.map((product)=>{
+    const existing=saleDraft.find((item)=>String(item.productId)===String(product.id));
+    const limit=saleDraftLimit(product.id);
+    return `<button type="button" class="sale-product-option ${existing?'is-selected':''}" data-add-sale-product="${escapeHTML(product.id)}"><span><strong>${escapeHTML(product.name||'Proizvod')}</strong><small>${escapeHTML([product.player||product.brand||product.color,Array.isArray(product.sizes)?product.sizes.join(', '):'',product.version||product.condition].filter(Boolean).join(' &middot; '))}</small></span><b>${existing?`+ kolicina (${existing.quantity}/${limit})`:'+ Dodaj'}</b></button>`;
+  }).join('')||'<p class="empty-state">Nema dostupnih proizvoda za ovu pretragu.</p>';
+  const items=form.querySelector('[data-sale-items]');
+  if(items)items.innerHTML=saleDraft.map((item,index)=>{
+    const product=products.find((entry)=>String(entry.id)===String(item.productId));
+    const limit=saleDraftLimit(item.productId);
+    const quantity=Math.max(1,Number(item.quantity||1));
+    const price=Number(item.price||0);
+    const cost=saleDraftCost(item);
+    const warning=quantity>limit?`<p class="sale-stock-warning">Na stanju je samo ${limit} kom.</p>`:'';
+    return `<article class="sale-selected-card ${warning?'has-warning':''}" data-sale-index="${index}"><div class="sale-selected-info"><a href="product.html?id=${escapeHTML(item.productId)}" data-product-detail-link="${escapeHTML(item.productId)}">${escapeHTML(item.name)}</a><small>${escapeHTML([item.player||product?.player, item.size||(Array.isArray(product?.sizes)?product.sizes.join(', '):''), product?.version||product?.condition].filter(Boolean).join(' &middot; '))}</small>${warning}</div><div class="sale-qty-control"><button type="button" data-sale-qty-step="-1" aria-label="Smanji kolicinu">&minus;</button><input type="number" min="1" max="${Math.max(limit,quantity)}" step="1" value="${quantity}" data-sale-quantity aria-label="Kolicina"><button type="button" data-sale-qty-step="1" aria-label="Povecaj kolicinu">+</button></div><label>Cijena / kom<input type="number" min="0" step="0.01" value="${price.toFixed(2)}" data-sale-price aria-label="Prodajna cijena"></label><div class="sale-line-summary"><span>Subtotal</span><strong>${formatPrice(price*quantity)}</strong><small>Kupnja: ${formatPrice(cost*quantity)}</small></div><button type="button" class="sale-remove-button" data-remove-sale aria-label="Ukloni">&times;</button></article>`;
+  }).join('')||'<p class="empty-state">Jos nema odabranih proizvoda.</p>';
+  const totals=saleDraftTotals();
+  totals.profit=totals.amount-totals.cost;
+  form.elements.amount.value=totals.amount.toFixed(2);
+  form.querySelector('[data-sale-count]').textContent=`${totals.distinct} proizvoda - ${totals.quantity} kom`;
+  form.querySelector('[data-sale-total]').textContent=formatPrice(totals.amount);
+  form.querySelector('[data-sale-cost]').textContent=formatPrice(totals.cost);
+  form.querySelector('[data-sale-profit]').textContent=formatPrice(totals.profit);
+  const saleDescription=form.querySelector('[data-sale-description]');
+  if(saleDescription&&!saleDescription.value.trim())saleDescription.value=totals.quantity?`Prodaja - ${totals.distinct} razlicita proizvoda - ${totals.quantity} komada`:'';
+}
 
 /** Uključuje graditelj prodaje u financijskoj formi. @returns {void} */
-function updateTransactionFormMode(){const form=document.querySelector('[data-transaction-form]'),isSale=form.elements.type.value==='Prodaja dresova';form.querySelector('[data-sale-builder]').hidden=!isSale;form.querySelector('[data-transaction-amount]').hidden=isSale;form.elements.amount.readOnly=isSale;if(isSale)renderSaleBuilder();}
+function updateTransactionFormMode(){
+  const form=document.querySelector('[data-transaction-form]');
+  if(!form)return;
+  const isSale=form.elements.type.value==='Prodaja dresova';
+  const saleBuilder=form.querySelector('[data-sale-builder]');
+  const amountField=form.querySelector('[data-transaction-amount]');
+  const manualField=form.querySelector('[data-transaction-description]');
+  const saleDescription=form.querySelector('[data-sale-description]');
+  const manualDescription=form.querySelector('[data-manual-description]');
+  if(saleBuilder)saleBuilder.hidden=!isSale;
+  if(amountField)amountField.hidden=isSale;
+  if(manualField)manualField.hidden=isSale;
+  form.elements.amount.readOnly=isSale;
+  if(saleDescription)saleDescription.disabled=!isSale;
+  if(manualDescription)manualDescription.disabled=isSale;
+  if(isSale){renderSaleBuilder();setTimeout(()=>form.querySelector('[data-sale-search]')?.focus(),0);}
+}
 
 /** Otvara potpuni admin pregled povezanog dresa, uključujući arhivirane. @param {string} productId ID. @returns {void} */
 function openLinkedProductDetail(productId){const product=products.find((item)=>String(item.id)===String(productId));if(!product){toast('Povezani proizvod više nije dostupan.');return;}const notes=getCollection('notes').filter((note)=>(note.productIds||[note.productId]).some((id)=>String(id)===String(product.id))),transactions=getCollection('transactions').filter((entry)=>(entry.items||[]).some((item)=>String(item.productId)===String(product.id))),dialog=document.querySelector('[data-linked-product-dialog]'),status=product.archived?'Arhiviran':product.stock<1?'Rasprodan':'Aktivan',isJersey=product.productType==='jersey';dialog.querySelector('[data-linked-product-detail]').innerHTML=`<header><div><p class="eyebrow">Detalji proizvoda</p><h2>${escapeHTML(product.name)}</h2></div><button type="button" data-close-dialog>×</button></header><div class="linked-product-gallery">${(product.images?.length?product.images:[getProductMainImage(product)]).map((image)=>`<img src="${escapeHTML(image)}" alt="${escapeHTML(product.name)}">`).join('')}</div><span class="status-pill ${product.archived||product.stock<1?'cancelled':'completed'}">${escapeHTML(status)}</span><dl class="detail-list">${isJersey?`<div><dt>Klub / reprezentacija</dt><dd>${escapeHTML(product.club||'-')}</dd></div><div><dt>Igrač</dt><dd>${escapeHTML(product.player||'-')}</dd></div><div><dt>Verzija</dt><dd>${escapeHTML(product.version||'-')}</dd></div>`:`<div><dt>Vrsta</dt><dd>${escapeHTML(product.productType||'-')}</dd></div><div><dt>Brend</dt><dd>${escapeHTML(product.brand||'-')}</dd></div><div><dt>Boja / stanje</dt><dd>${escapeHTML([product.color,product.condition].filter(Boolean).join(' · ')||'-')}</dd></div>`}<div><dt>Veličina / broj</dt><dd>${escapeHTML(product.sizes.join(', ')||'-')}</dd></div><div><dt>Kupovna cijena</dt><dd>${formatPrice(product.costPrice)}</dd></div><div><dt>Prodajna cijena</dt><dd>${formatPrice(product.price)}</dd></div><div><dt>Trenutno stanje</dt><dd>${product.stock}</dd></div><div><dt>Opis</dt><dd>${escapeHTML(product.description||'-')}</dd></div></dl><section><h3>Bilješke</h3>${notes.length?notes.map((note)=>`<button type="button" class="linked-record-button" data-note-detail-link="${escapeHTML(note.id)}"><strong>${escapeHTML(note.title)}</strong><span>${escapeHTML(note.description||'Bez opisa')}</span></button>`).join(''):'<p>Nema povezanih bilješki.</p>'}</section><section><h3>Transakcije</h3>${transactions.length?transactions.map((entry)=>`<button type="button" class="linked-record-button" data-transaction-detail-link="${escapeHTML(entry.id)}"><strong>${formatDate(entry.date)} · ${formatPrice(entry.items.find((item)=>String(item.productId)===String(product.id))?.price||0)}</strong><span>${escapeHTML(entry.description)}</span></button>`).join(''):'<p>Nema povezanih transakcija.</p>'}</section>`;dialog.showModal();}
@@ -449,17 +759,73 @@ function openLinkedProductDetail(productId){const product=products.find((item)=>
 function openLinkedNoteDetail(noteId){const note=getCollection('notes').find((item)=>String(item.id)===String(noteId));if(!note)return;const root=document.querySelector('[data-linked-product-detail]');root.innerHTML=`<header><div><p class="eyebrow">Detalji bilješke</p><h2>${escapeHTML(note.title)}</h2></div><button type="button" data-close-dialog>×</button></header><p>${escapeHTML(note.description||'Bez opisa')}</p><dl class="detail-list"><div><dt>Status</dt><dd>${escapeHTML(note.status)}</dd></div><div><dt>Prioritet</dt><dd>${escapeHTML(note.priority)}</dd></div><div><dt>Rok</dt><dd>${note.dueDate?formatDate(note.dueDate,false):'Bez roka'}</dd></div></dl><section><h3>Povezani proizvodi</h3>${(note.productIds||[note.productId]).filter(Boolean).map((id)=>{const product=products.find((item)=>String(item.id)===String(id));return product?`<button type="button" class="linked-record-button" data-product-detail-link="${escapeHTML(product.id)}">${escapeHTML(product.name)}</button>`:'';}).join('')||'<p>Nema povezanih proizvoda.</p>'}</section>`;}
 
 /** Otvara povezanu transakciju unutar istog detaljnog modala. @param {string} transactionId ID. */
-function openLinkedTransactionDetail(transactionId){const entry=getCollection('transactions').find((item)=>String(item.id)===String(transactionId));if(!entry)return;const root=document.querySelector('[data-linked-product-detail]');root.innerHTML=`<header><div><p class="eyebrow">Detalji transakcije</p><h2>${escapeHTML(entry.description)}</h2></div><button type="button" data-close-dialog>×</button></header>${entry.voided?'<span class="voided-badge">Poništeno</span>':''}<dl class="detail-list"><div><dt>Datum</dt><dd>${formatDate(entry.date)}</dd></div><div><dt>Iznos</dt><dd>${formatPrice(entry.amount)}</dd></div><div><dt>Plaćanje</dt><dd>${escapeHTML(entry.paymentMethod||'-')}</dd></div><div><dt>Kanal</dt><dd>${escapeHTML(entry.salesChannel||'-')}</dd></div></dl><section><h3>Proizvodi</h3>${(entry.items||[]).map((item)=>`<button type="button" class="linked-record-button" data-product-detail-link="${escapeHTML(item.productId)}"><strong>${escapeHTML(item.name)}</strong><span>${formatPrice(item.price)}</span></button>`).join('')||'<p>Nema povezanih proizvoda.</p>'}</section>`;}
+function openLinkedTransactionDetail(transactionId){const entry=getCollection('transactions').find((item)=>String(item.id)===String(transactionId));if(!entry)return;const root=document.querySelector('[data-linked-product-detail]');root.innerHTML=`<header><div><p class="eyebrow">Detalji transakcije</p><h2>${escapeHTML(entry.description)}</h2></div><button type="button" data-close-dialog>×</button></header>${entry.voided?'<span class="voided-badge">Poni\u0161teno</span>':''}<dl class="detail-list"><div><dt>Datum</dt><dd>${formatDate(entry.date)}</dd></div><div><dt>Iznos</dt><dd>${formatPrice(entry.amount)}</dd></div><div><dt>Plaćanje</dt><dd>${escapeHTML(entry.paymentMethod||'-')}</dd></div><div><dt>Kanal</dt><dd>${escapeHTML(entry.salesChannel||'-')}</dd></div></dl><section><h3>Proizvodi</h3>${(entry.items||[]).map((item)=>`<button type="button" class="linked-record-button" data-product-detail-link="${escapeHTML(item.productId)}"><strong>${escapeHTML(item.name)}</strong><span>${formatPrice(item.price)}</span></button>`).join('')||'<p>Nema povezanih proizvoda.</p>'}</section>`;}
 
 /** Povezuje financijske filtre i ručni unos. @returns {void} */
 function bindFinance() {
-  document.querySelectorAll('[data-finance-period],[data-finance-type],[data-finance-payment],[data-finance-channel],[data-finance-status],[data-finance-profit]').forEach((field)=>field.addEventListener('change',renderFinance));document.querySelector('[data-finance-product]').addEventListener('input',()=>debounceAdmin('admin-finance-product',renderFinance));document.querySelector('[data-transaction-type]').addEventListener('change',renderTransactions);
-  const form=document.querySelector('[data-transaction-form]');form.elements.type.addEventListener('change',updateTransactionFormMode);form.querySelector('[data-sale-search]').addEventListener('input',renderSaleBuilder);form.querySelector('[data-sale-builder]').addEventListener('click',(event)=>{const add=event.target.closest('[data-add-sale-product]'),remove=event.target.closest('[data-remove-sale]');if(add){const product=products.find((item)=>String(item.id)===String(add.dataset.addSaleProduct));if(product&&!saleDraft.some((item)=>String(item.productId)===String(product.id)))saleDraft.push({productId:product.id,name:product.name,price:product.price});}if(remove)saleDraft.splice(Number(remove.closest('[data-sale-index]').dataset.saleIndex),1);renderSaleBuilder();});form.querySelector('[data-sale-items]').addEventListener('change',(event)=>{if(!event.target.matches('[data-sale-price]'))return;saleDraft[Number(event.target.closest('[data-sale-index]').dataset.saleIndex)].price=Number(event.target.value);renderSaleBuilder();});
-  form.addEventListener('submit',async(event)=>{event.preventDefault();const submit=form.querySelector('[type="submit"]');if(submit.disabled)return;submit.disabled=true;try{const data=new FormData(form),type=data.get('type');if(type==='Prodaja dresova'){if(!saleDraft.length)throw new Error('Odaberite barem jedan dres.');if(!confirm(`Potvrditi prodaju ${saleDraft.length} ${saleDraft.length===1?'dresa':'dresova'}?`))return;await createLiveSale(saleDraft,data.get('description').trim(),data.get('paymentMethod'),data.get('salesChannel'));const sellerSaleAlerts=[];for(const item of saleDraft){const product=products.find((entry)=>String(entry.id)===String(item.productId));recordChange('quantities',`Prodaja uživo: ${product?.name||item.name}, stanje ${product?.stock} → ${Math.max(0,Number(product?.stock||1)-1)}`,product?.stock,Math.max(0,Number(product?.stock||1)-1));sellerSaleAlerts.push(await syncSellersAfterProductChange(item.productId,{reason:'sale_sync',soldQuantity:1,notify:true,showToast:false}));}toast('Prodaja spremljena i stanje smanjeno.');showSellerSaleAlertModal(sellerSaleAlerts);}else{const raw=Number(data.get('amount')),amount=negativeTypes.has(type)?-Math.abs(raw):Math.abs(raw),record={type,amount,description:data.get('description').trim(),source:'Ručni unos',date:new Date(data.get('date')).toISOString()};await createTransaction(record);recordChange('finance',`Ručna transakcija: ${record.description}`,null,record);toast('Transakcija je dodana.');}document.querySelector('[data-transaction-dialog]').close();saleDraft=[];await refreshAll();}catch(error){console.error('[DresHub Prodaja]',error);toast(`Prodaja nije spremljena: ${error.message}`);}finally{submit.disabled=false;}});
-  document.querySelector('[data-live-sale-form]').addEventListener('submit',async(event)=>{event.preventDefault();const saleForm=event.currentTarget,button=saleForm.querySelector('[type="submit"]');if(button.disabled)return;const product=products.find((item)=>String(item.id)===String(saleForm.elements.productId.value));if(!product||product.stock<1){toast('Dres više nije na stanju.');return;}if(!confirm(`Jesi siguran da želiš označiti „${product.name}” kao prodan?`))return;button.disabled=true;try{await createLiveSale([{productId:product.id,price:Number(saleForm.elements.price.value)}],saleForm.elements.note.value.trim(),saleForm.elements.paymentMethod.value,saleForm.elements.salesChannel.value);recordChange('quantities',`Prodaja uživo: ${product.name}, stanje ${product.stock} → ${product.stock-1}`,product.stock,product.stock-1);const sellerSaleAlerts=[await syncSellersAfterProductChange(product.id,{reason:'sale_sync',soldQuantity:1,notify:true,showToast:false})];document.querySelector('[data-live-sale-dialog]').close();toast('Prodaja spremljena i stanje smanjeno.');showSellerSaleAlertModal(sellerSaleAlerts);await refreshAll();}catch(error){console.error('[DresHub Prodaja]',error);toast(`Prodaja nije spremljena: ${error.message}`);}finally{button.disabled=false;}});
-  document.addEventListener('click',async(event)=>{const button=event.target.closest('[data-void-sale]');if(!button)return;event.preventDefault();if(button.disabled||!confirm('Jesi li siguran da želiš poništiti ovu prodaju?'))return;button.disabled=true;try{const transaction=getCollection('transactions').find((item)=>String(item.id)===String(button.dataset.voidSale));await voidLiveSale(button.dataset.voidSale);recordChange('quantities',`Poništena prodaja #${button.dataset.voidSale}; stanje svih dresova je vraćeno.`,transaction?.items||null,'Zaliha vraćena');for(const item of transaction?.items||[])await syncSellersAfterProductChange(item.productId,{reason:'void_sale_sync',soldQuantity:0,notify:true});toast('Prodaja je poništena i stanje vraćeno.');await refreshAll();}catch(error){console.error('[DresHub Poništavanje prodaje]',error);toast(`Prodaju nije moguće poništiti: ${error.message}`);}finally{button.disabled=false;}});
+  document.querySelectorAll('[data-finance-period],[data-finance-type],[data-finance-payment],[data-finance-channel],[data-finance-status],[data-finance-profit]').forEach((field)=>field.addEventListener('change',renderFinance));
+  document.querySelector('[data-finance-product]').addEventListener('input',()=>debounceAdmin('admin-finance-product',renderFinance));
+  document.querySelector('[data-transaction-type]').addEventListener('change',renderTransactions);
+  const form=document.querySelector('[data-transaction-form]');
+  form.elements.type.addEventListener('change',updateTransactionFormMode);
+  form.querySelector('[data-sale-search]').addEventListener('input',renderSaleBuilder);
+  form.querySelector('[data-sale-builder]').addEventListener('click',(event)=>{
+    const add=event.target.closest('[data-add-sale-product]'),remove=event.target.closest('[data-remove-sale]'),step=event.target.closest('[data-sale-qty-step]');
+    if(add&&event.detail>1)return;
+    if(add){const product=products.find((item)=>String(item.id)===String(add.dataset.addSaleProduct));if(addSaleProductToDraft(product)){const search=form.querySelector('[data-sale-search]');if(search){search.value='';setTimeout(()=>search.focus(),0);}}}
+    if(remove)saleDraft.splice(Number(remove.closest('[data-sale-index]').dataset.saleIndex),1);
+    if(step){const row=step.closest('[data-sale-index]'),item=saleDraft[Number(row?.dataset.saleIndex)];if(item){const next=Number(item.quantity||1)+Number(step.dataset.saleQtyStep);const limit=saleDraftLimit(item.productId);if(next>limit){toast('Nema dovoljno komada na stanju za ovaj proizvod.');}item.quantity=Math.max(1,Math.min(next,Math.max(1,limit)));}}
+    if(add||remove||step)renderSaleBuilder();
+  });
+  form.querySelector('[data-sale-items]').addEventListener('input',(event)=>{
+    const row=event.target.closest('[data-sale-index]');if(!row)return;
+    const item=saleDraft[Number(row.dataset.saleIndex)];if(!item)return;
+    if(event.target.matches('[data-sale-price]'))item.price=Number(event.target.value);
+    if(event.target.matches('[data-sale-quantity]')){const limit=saleDraftLimit(item.productId);const next=Math.max(1,Number(event.target.value||1));item.quantity=Math.min(next,Math.max(1,limit));if(next>limit){event.target.value=item.quantity;toast('Nema dovoljno komada na stanju za ovaj proizvod.');}}
+    const quantity=Math.max(1,Number(item.quantity||1)),price=Number(item.price||0),cost=saleDraftCost(item);
+    row.querySelector('.sale-line-summary strong').textContent=formatPrice(price*quantity);
+    row.querySelector('.sale-line-summary small').textContent=`Kupnja: ${formatPrice(cost*quantity)}`;
+    updateSaleSummaryFields(form);
+  });
+  form.querySelector('[data-sale-search]').addEventListener('keydown',(event)=>{if(event.key!=='Enter')return;event.preventDefault();const first=form.querySelector('[data-sale-options] [data-add-sale-product]');if(!first)return;const product=products.find((item)=>String(item.id)===String(first.dataset.addSaleProduct));if(addSaleProductToDraft(product)){event.currentTarget.value='';event.currentTarget.focus();renderSaleBuilder();}});
+  form.addEventListener('submit',async(event)=>{
+    event.preventDefault();
+    const submit=form.querySelector('[type="submit"]');if(submit.disabled)return;submit.disabled=true;
+    try{
+      const data=new FormData(form),type=data.get('type');let sellerSaleAlerts=[];
+      if(type==='Prodaja dresova'){
+        if(!saleDraft.length)throw new Error('Odaberite barem jedan proizvod.');
+        if(!confirm(`${editingTransactionId?'Spremiti izmjene prodaje':'Potvrditi prodaju'} ${saleDraft.reduce((sum,item)=>sum+Number(item.quantity||1),0)} komada?`))return;
+        const invalid=saleDraft.find((item)=>Number(item.quantity||1)>saleDraftLimit(item.productId));
+        if(invalid)throw new Error(`Nema dovoljno komada na stanju za ${invalid.name}.`);
+        const payload=saleDraft.map((item)=>({...item,quantity:Math.max(1,Number(item.quantity||1)),price:Number(item.price||0)}));
+        if(editingTransactionId){
+          await updateLiveSale(editingTransactionId,payload,{description:data.get('description').trim(),paymentMethod:data.get('paymentMethod'),salesChannel:data.get('salesChannel'),date:new Date(data.get('date')).toISOString()});
+          recordChange('finance',`Ure\u0111ena prodaja #${editingTransactionId}`,null,payload);
+          toast('Prodaja je ure\u0111ena.');
+        }else{
+          await createLiveSale(payload,data.get('description').trim(),data.get('paymentMethod'),data.get('salesChannel'),new Date(data.get('date')).toISOString());
+          for(const item of payload){const product=products.find((entry)=>String(entry.id)===String(item.productId));recordChange('quantities',`Prodaja u\u017eivo: ${product?.name||item.name}, stanje ${product?.stock} \u2192 ${Math.max(0,Number(product?.stock||0)-Number(item.quantity||1))}`,product?.stock,Math.max(0,Number(product?.stock||0)-Number(item.quantity||1)));const affectedSellers=await syncSellerListingsAfterSaleSafe(item.productId,Number(item.quantity||1));const alert=buildSellerSaleAlert(product,Number(item.quantity||1),affectedSellers);if(alert)sellerSaleAlerts.push(alert);}
+          toast('Prodaja spremljena i stanje smanjeno.');
+        }
+      }else{
+        const raw=Number(data.get('amount')),amount=negativeTypes.has(type)?-Math.abs(raw):Math.abs(raw),record={type,amount,description:data.get('description').trim(),source:'Ru\u010dni unos',date:new Date(data.get('date')).toISOString(),paymentMethod:data.get('paymentMethod'),salesChannel:data.get('salesChannel')};
+        if(editingTransactionId){await updateTransaction(editingTransactionId,record);recordChange('finance',`Ure\u0111ena transakcija: ${record.description}`,null,record);toast('Transakcija je ure\u0111ena.');}
+        else{await createTransaction(record);recordChange('finance',`Ru\u010dna transakcija: ${record.description}`,null,record);toast('Transakcija je dodana.');}
+      }
+      document.querySelector('[data-transaction-dialog]').close();editingTransactionId=null;saleDraft=[];await refreshAll();showSellerSaleAlerts(sellerSaleAlerts);
+    }catch(error){console.error('[DresHub Financije]',error);toast(`Transakcija nije spremljena: ${error.message}`);}
+    finally{submit.disabled=false;}
+  });
+  document.querySelector('[data-live-sale-form]').addEventListener('submit',async(event)=>{event.preventDefault();const saleForm=event.currentTarget,button=saleForm.querySelector('[type="submit"]');if(button.disabled)return;const product=products.find((item)=>String(item.id)===String(saleForm.elements.productId.value));if(!product||product.stock<1){toast('Proizvod vi\u0161e nije na stanju.');return;}if(!confirm(`Jesi siguran da \u017eeli\u0161 ozna\u010diti "${product.name}" kao prodan?`))return;button.disabled=true;try{let sellerSaleAlerts=[];await createLiveSale([{productId:product.id,price:Number(saleForm.elements.price.value),quantity:1}],saleForm.elements.note.value.trim(),saleForm.elements.paymentMethod.value,saleForm.elements.salesChannel.value);recordChange('quantities',`Prodaja u\u017eivo: ${product.name}, stanje ${product.stock} \u2192 ${product.stock-1}`,product.stock,product.stock-1);const affectedSellers=await syncSellerListingsAfterSaleSafe(product.id,1);const alert=buildSellerSaleAlert(product,1,affectedSellers);if(alert)sellerSaleAlerts.push(alert);document.querySelector('[data-live-sale-dialog]').close();toast('Prodaja spremljena i stanje smanjeno.');await refreshAll();showSellerSaleAlerts(sellerSaleAlerts);}catch(error){console.error('[DresHub Prodaja]',error);toast(`Prodaja nije spremljena: ${error.message}`);}finally{button.disabled=false;}});
+  document.addEventListener('click',async(event)=>{
+    const edit=event.target.closest('[data-edit-transaction]');
+    if(edit){event.preventDefault();const transaction=getCollection('transactions').find((item)=>String(item.id)===String(edit.dataset.editTransaction));if(transaction)openTransactionDialog(transaction);return;}
+    const del=event.target.closest('[data-delete-transaction]');
+    if(del){event.preventDefault();if(del.disabled||!confirm('Jesi li siguran da \u017eeli\u0161 obrisati ovu transakciju?'))return;del.disabled=true;try{await deleteTransaction(del.dataset.deleteTransaction);toast('Transakcija je obrisana.');await refreshAll();}catch(error){console.error('[DresHub Brisanje transakcije]',error);toast(`Transakcija nije obrisana: ${error.message}`);}finally{del.disabled=false;}return;}
+    const button=event.target.closest('[data-void-sale]');if(!button)return;event.preventDefault();if(button.disabled||!confirm('Jesi li siguran da \u017eeli\u0161 poni\u0161titi ovu prodaju?'))return;button.disabled=true;try{const transaction=getCollection('transactions').find((item)=>String(item.id)===String(button.dataset.voidSale));await voidLiveSale(button.dataset.voidSale);recordChange('quantities',`Poni\u0161tena prodaja #${button.dataset.voidSale}; stanje svih proizvoda je vra\u0107eno.`,transaction?.items||null,'Zaliha vra\u0107ena');toast('Prodaja je poni\u0161tena i stanje vra\u0107eno.');await refreshAll();}catch(error){console.error('[DresHub Poni\u0161tavanje prodaje]',error);toast(`Prodaju nije mogu\u0107e poni\u0161titi: ${error.message}`);}finally{button.disabled=false;}
+  });
 }
-
 /** Povezuje upravljanje bilješkama. @returns {void} */
 function bindNotes() {
   const noteForm=document.querySelector('[data-note-form]');
@@ -477,50 +843,60 @@ function bindNotes() {
       if(button.matches('[data-edit-note]')){openNoteDialog(note);selectLinkedProducts(note);return;}
       if(button.matches('[data-complete-note]')){await completeNote(noteId);recordChange('notes',`Završena bilješka: ${note.title}`,'Aktivna','Završena');}
       else if(button.matches('[data-archive-note]')){await archiveNote(noteId);recordChange('notes',`Arhivirana bilješka: ${note.title}`,null,'Arhivirana');}
-      else if(button.matches('[data-delete-note]')){if(!confirm('Obrisati bilješku?'))return;await deleteNote(noteId);recordChange('notes',`Obrisana bilješka: ${note.title}`,note,null);}
+      else if(button.matches('[data-delete-note]')){if(!confirm(`Obrisati bilje\u0161ku "${note.title}"?`))return;await deleteNote(noteId);recordChange('notes',`Obrisana bilje\u0161ka: ${note.title}`,note,null);}
+      toast('Bilje\u0161ka je a\u017eurirana.');
       await refreshAll();
-    }catch(error){console.error('[DresHub Bilješke]',{service:'noteService',table:'notes',operation:'akcija bilješke',noteId,message:error.message});toast(`Akcija nije uspjela: ${error.message}`);}
+    }catch(error){console.error('[DresHub Bilje\u0161ke]',error);toast(`Akcija nije uspjela: ${error.message}`);}
   });
 }
 
-/** Povezuje filtre povijesti. @returns {void} */
-function bindHistories(){document.querySelector('[data-change-category]').addEventListener('change',renderChanges);document.querySelector('[data-change-period]').addEventListener('change',renderChanges);}
+/** Povezuje filtre povijesti i pomoćnu listu transakcija. @returns {void} */
+function bindHistories(){
+  document.querySelector('[data-change-category]')?.addEventListener('change',renderChanges);
+  document.querySelector('[data-change-period]')?.addEventListener('change',renderChanges);
+  document.querySelector('[data-transaction-type]')?.addEventListener('change',renderTransactions);
+}
 
-function bindSellers(){
-  document.addEventListener('click',async(event)=>{
-    if(event.target.closest('[data-open-seller]')){openSellerDialog();return;}
-    const sellerCard=event.target.closest('[data-seller-card]');if(sellerCard){activeSellerId=sellerCard.dataset.sellerCard;document.querySelector('[data-seller-profile]').dataset.sellerTab='overview';renderSellers();return;}
-    const tab=event.target.closest('[data-seller-tab]');if(tab){document.querySelector('[data-seller-profile]').dataset.sellerTab=tab.dataset.sellerTab;renderSellerProfile();return;}
-    const editSeller=event.target.closest('[data-edit-seller]');if(editSeller){openSellerDialog(sellers.find((seller)=>String(seller.id)===String(editSeller.dataset.editSeller)));return;}
-    const picker=event.target.closest('[data-open-seller-picker]');if(picker){openSellerProductPicker(picker.dataset.openSellerPicker);return;}
-    const listingRow=event.target.closest('[data-seller-listing]');if(listingRow&&activeSellerId){
-      const productId=listingRow.dataset.sellerListing,seller=sellers.find((item)=>String(item.id)===String(activeSellerId)),listing=seller?.listings.find((item)=>String(item.productId)===String(productId));
-      if(!listing)return;
-      if(event.target.closest('[data-save-seller-listing]')){await upsertSellerListing(activeSellerId,productId,{quantity:Number(listingRow.querySelector('[data-seller-listing-quantity]').value),status:listing.status,note:listing.note});toast('Oglas prodavača je spremljen.');await refreshAll();return;}
-      if(event.target.closest('[data-toggle-seller-listing]')){await upsertSellerListing(activeSellerId,productId,{quantity:listing.quantity,status:listing.status==='paused'?'active':'paused',note:listing.note});toast(listing.status==='paused'?'Oglas je aktiviran.':'Oglas je pauziran.');await refreshAll();return;}
-      if(event.target.closest('[data-remove-seller-listing]')&&confirm('Ukloniti proizvod iz oglašavanja ovog prodavača?')){await removeSellerListing(activeSellerId,productId);toast('Proizvod je uklonjen iz oglašavanja.');await refreshAll();return;}
-    }
-    const physicalRow=event.target.closest('[data-seller-physical]');if(physicalRow&&activeSellerId&&(event.target.closest('[data-return-one-seller-physical]')||event.target.closest('[data-return-all-seller-physical]'))){const button=event.target.closest('[data-return-one-seller-physical],[data-return-all-seller-physical]'),seller=sellers.find((item)=>String(item.id)===String(activeSellerId)),productId=physicalRow.dataset.sellerPhysical,product=products.find((entry)=>String(entry.id)===String(productId));if(!seller||!productId){console.warn('[DresHub Prodavači] Povrat je prekinut jer nedostaje prodavač ili productId.',{activeSellerId,productId,seller});toast('Povrat nije moguć: nedostaje prodavač ili proizvod.');return;}button.disabled=true;try{console.info('[DresHub Prodavači] Povrat fizičkog proizvoda', { sellerId: activeSellerId, productId, mode: button.matches('[data-return-all-seller-physical]')?'all':'one' });if(button.matches('[data-return-all-seller-physical]'))await returnAllSellerPhysicalProduct(activeSellerId,productId);else await returnOneSellerPhysicalProduct(activeSellerId,productId);toast(button.matches('[data-return-all-seller-physical]')?`Vraćeni su svi fizički komadi proizvoda ${product?.name||'proizvod'}.`:`Vraćen je 1 primjerak proizvoda ${product?.name||'proizvod'}.`);await refreshAll();}catch(error){console.error('[DresHub Prodavači]',{service:'sellerService',table:'seller_physical_items',operation:'jednostavni povrat fizičkog proizvoda',sellerId:activeSellerId,productId,message:error.message,error});toast(`Povrat nije uspio: ${error.message}`);}finally{button.disabled=false;}}
+/** Povezuje spremanje postavki i export. @returns {void} */
+function bindSettings(){
+  const form=document.querySelector('[data-settings-form]');
+  if(!form)return;
+  form.addEventListener('submit',async(event)=>{
+    event.preventDefault();
+    const current=getAdminSettings();
+    const settings={
+      ...current,
+      storeName:form.elements.storeName.value.trim(),
+      email:form.elements.email.value.trim(),
+      phoneLuki:form.elements.phoneLuki.value.trim(),
+      phoneBlaz:form.elements.phoneBlaz.value.trim(),
+      instagram:form.elements.instagram.value.trim(),
+      notification:form.elements.notification.value.trim(),
+      notificationVisible:form.elements.notificationVisible.checked,
+      reservationHours:Number(form.elements.reservationHours.value||48),
+      theme:form.elements.theme.value,
+      badges:form.elements.badges.value.split(',').map((item)=>item.trim()).filter(Boolean)
+    };
+    if(form.elements.newPassword.value)settings.adminPassword=form.elements.newPassword.value;
+    if(form.elements.securityAnswer.value)settings.securityAnswer=form.elements.securityAnswer.value;
+    await saveAdminSettings(settings);
+    form.elements.newPassword.value='';
+    form.elements.securityAnswer.value='';
+    toast('Postavke su spremljene.');
+    await refreshAll();
   });
-  document.querySelector('[data-seller-form]')?.addEventListener('submit',async(event)=>{event.preventDefault();const form=event.currentTarget,submit=form.querySelector('[type="submit"]');submit.disabled=true;try{const data=new FormData(form),payload={fullName:data.get('fullName').trim(),phone:data.get('phone').trim(),contact:data.get('contact').trim(),startedAt:data.get('startedAt'),status:data.get('status'),note:data.get('note').trim()};const id=data.get('id');const saved=id?await updateSeller(id,payload):await createSeller(payload);activeSellerId=saved.id;document.querySelector('[data-seller-dialog]').close();toast('Prodavač je spremljen.');await refreshAll();}catch(error){console.error('[DresHub Prodavači]',error);toast(`Prodavač nije spremljen: ${error.message}`);}finally{submit.disabled=false;}});
-  const sellerProductForm=document.querySelector('[data-seller-product-form]');
-  sellerProductForm?.querySelector('[data-seller-product-search]')?.addEventListener('input',()=>debounceAdmin('seller-product-picker',renderSellerProductPicker));
-  sellerProductForm?.addEventListener('click',(event)=>{const pick=event.target.closest('[data-seller-pick-product]');if(pick){const existing=sellerPickerDraft.findIndex((item)=>String(item.productId)===String(pick.dataset.sellerPickProduct));if(existing>=0)sellerPickerDraft.splice(existing,1);else sellerPickerDraft.push({productId:pick.dataset.sellerPickProduct,quantity:1});renderSellerProductPicker();return;}const remove=event.target.closest('[data-remove-seller-draft]');if(remove){sellerPickerDraft.splice(Number(remove.closest('[data-seller-draft-index]').dataset.sellerDraftIndex),1);renderSellerProductPicker();}});
-  sellerProductForm?.addEventListener('change',(event)=>{if(!event.target.matches('[data-seller-draft-quantity]'))return;const index=Number(event.target.closest('[data-seller-draft-index]').dataset.sellerDraftIndex);sellerPickerDraft[index].quantity=Math.max(1,Number(event.target.value||1));renderSellerProductPicker();});
-  sellerProductForm?.addEventListener('submit',async(event)=>{event.preventDefault();const form=event.currentTarget,submit=form.querySelector('[type="submit"]');if(!sellerPickerDraft.length){toast('Odaberite barem jedan proizvod.');return;}submit.disabled=true;try{const data=new FormData(form),sellerId=data.get('sellerId'),mode=data.get('mode');if(mode==='handoff')await handoffSellerProducts(sellerId,sellerPickerDraft,{note:data.get('note').trim(),handedOffAt:new Date(data.get('handedOffAt')).toISOString()});else for(const item of sellerPickerDraft){const product=products.find((entry)=>String(entry.id)===String(item.productId));await upsertSellerListing(sellerId,item.productId,{quantity:Number(item.quantity||product?.stock||0),status:'active',note:data.get('note').trim()});}sellerPickerDraft=[];document.querySelector('[data-seller-product-dialog]').close();toast(mode==='handoff'?'Predaja je spremljena i proizvodi su dodani u oglašavanje.':'Proizvodi su dodani u oglašavanje.');await refreshAll();}catch(error){console.error('[DresHub Prodavači]',error);toast(`Spremanje nije uspjelo: ${error.message}`);}finally{submit.disabled=false;}});
-  document.querySelector('[data-seller-search]')?.addEventListener('input',()=>debounceAdmin('seller-search',renderSellers));
-  document.querySelector('[data-seller-status]')?.addEventListener('change',renderSellers);
-  document.querySelector('[data-seller-filter]')?.addEventListener('change',renderSellers);
+  document.querySelector('[data-export]')?.addEventListener('click',async()=>{
+    const data=await exportAllData();
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const link=document.createElement('a');
+    link.href=URL.createObjectURL(blob);
+    link.download=`dreshub-backup-${new Date().toISOString().slice(0,10)}.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  });
 }
 
-/** Povezuje spremanje, export i import postavki. @returns {void} */
-function bindSettings() {
-  document.querySelector('[data-settings-form]').addEventListener('submit',async(event)=>{event.preventDefault();const form=event.currentTarget,data=new FormData(form),settings=getAdminSettings(),newPassword=data.get('newPassword');if(newPassword&&String(data.get('securityAnswer')).trim().toLocaleLowerCase('hr')!=='tili'){toast('Odgovor na sigurnosno pitanje nije točan.');return;}const logoFile=form.elements.logo.files[0],logo=logoFile?(await readImages([logoFile]))[0]:settings.logo;const next={...settings,storeName:data.get('storeName').trim(),email:data.get('email').trim(),phoneLuki:data.get('phoneLuki').trim(),phoneBlaz:data.get('phoneBlaz').trim(),instagram:data.get('instagram').trim(),notification:data.get('notification').trim(),notificationVisible:data.get('notificationVisible')==='on',reservationHours:Number(data.get('reservationHours')),theme:data.get('theme'),badges:data.get('badges').split(',').map(x=>x.trim()).filter(Boolean),logo,adminPassword:newPassword||settings.adminPassword};await saveAdminSettings(next);form.elements.newPassword.value='';form.elements.securityAnswer.value='';document.documentElement.dataset.adminTheme=next.theme;toast('Postavke su spremljene.');await refreshAll();});
-  document.querySelector('[data-export]').addEventListener('click',async()=>{const data=await exportAllData(),blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`dreshub-backup-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(url);toast('Export je pripremljen.');});
-  document.querySelector('[data-import]').addEventListener('change',async(event)=>{const file=event.target.files[0];if(!file)return;try{const data=JSON.parse(await file.text());if(data.products)saveProducts(data.products);['reservations','orders','transactions','notes','changes'].forEach(key=>{if(Array.isArray(data[key]))saveCollection(key,data[key]);});if(data.settings)saveAdminSettings(data.settings);toast('Backup je uspješno uvezen.');await refreshAll();}catch{toast('Backup datoteka nije ispravna.');}});
-}
-
-/** Pokreće admin aplikaciju nakon provjere prijave. @returns {Promise<void>} */
+/** Pokre\u0107e admin aplikaciju. @returns {Promise<void>} */
 async function startAdmin() {
   const login=document.querySelector('[data-admin-login]'),app=document.querySelector('[data-admin-app]');
   setupOtherProductsAdminUI();
